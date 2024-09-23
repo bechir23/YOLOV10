@@ -19,7 +19,6 @@ __all__ = (
     "ChannelAttention",
     "SpatialAttention",
     "CBAM",
-    "ECAAttention"
     "Concat",
     "RepConv",
 )
