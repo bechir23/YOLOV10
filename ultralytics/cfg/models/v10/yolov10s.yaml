@@ -32,6 +32,8 @@ head:
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 4], 1, Concat, [1]] # cat backbone P3
   - [-1, 3, C2f, [256]] # 16 (P3/8-small)
+  - [-1, 1, ECAAttention, [256]]  #  ECA after the C2f block for medium feature maps
+
 
   - [-1, 1, Conv, [256, 3, 2]]
   - [[-1, 13], 1, Concat, [1]] # cat head P4
