@@ -53,6 +53,9 @@ from ultralytics.nn.modules import (
     PSA,
     SCDown,
     RepVGGDW,
+    SEBlock,
+    CBAM,
+    ECAAttention,
     v10Detect
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
@@ -852,8 +855,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         LOGGER.info(f"\n{'':>3}{'from':>20}{'n':>3}{'params':>10}  {'module':<45}{'arguments':<30}")
     ch = [ch]
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
-    for i, (f, n, m, args) in enumerate(d["backbone"] + d["head"]):  # from, number, module, args
-        m = getattr(torch.nn, m[3:]) if "nn." in m else globals()[m]  # get module
+    for i, (f, n, m, args) in enumerate(d["backbone"] + d["head"]):
+        m = getattr(torch.nn, m[3:]) if "nn." in m else globals()[m]
+    
+
         for j, a in enumerate(args):
             if isinstance(a, str):
                 with contextlib.suppress(ValueError):
@@ -889,6 +894,8 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             PSA,
             SCDown,
             C2fCIB
+            
+            
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
@@ -929,6 +936,16 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [c1, c2, *args[1:]]
         elif m is CBFuse:
             c2 = ch[f[-1]]
+        elif m is CBAM :
+            args=[c1]
+        elif m is ECAAttention:
+            c1, c2 = ch[f], args[0]
+            args = [c1]  # Pass necessary arguments
+        # Add SEBlock
+        elif m is SEBlock:
+            c1, c2 = ch[f], args[0]
+            args = [c1] 
+
         else:
             c2 = ch[f]
 

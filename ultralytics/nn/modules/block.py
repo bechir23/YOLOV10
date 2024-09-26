@@ -172,9 +172,11 @@ class SPPF(nn.Module):
 
     def forward(self, x):
         """Forward pass through Ghost Convolution block."""
+        print("sppf x", x.shape)
         x = self.cv1(x)
         y1 = self.m(x)
         y2 = self.m(y1)
+        print("sppf y1", self.cv2(torch.cat((x, y1, y2, self.m(y2)), 1)).shape)
         return self.cv2(torch.cat((x, y1, y2, self.m(y2)), 1))
 
 
@@ -221,6 +223,7 @@ class C2f(nn.Module):
         expansion.
         """
         super().__init__()
+       
         self.c = int(c2 * e)  # hidden channels
         self.cv1 = Conv(c1, 2 * self.c, 1, 1)
         self.cv2 = Conv((2 + n) * self.c, c2, 1)  # optional act=FReLU(c2)
@@ -228,14 +231,17 @@ class C2f(nn.Module):
 
     def forward(self, x):
         """Forward pass through C2f layer."""
+        print("c2f x", x.shape)
         y = list(self.cv1(x).chunk(2, 1))
         y.extend(m(y[-1]) for m in self.m)
+        print("c2f y 1",(self.cv2(torch.cat(y, 1))).shape)
         return self.cv2(torch.cat(y, 1))
 
     def forward_split(self, x):
         """Forward pass using split() instead of chunk()."""
         y = list(self.cv1(x).split((self.c, self.c), 1))
         y.extend(m(y[-1]) for m in self.m)
+        print("c2f y 2",(self.cv2(torch.cat(y, 1))).shape)
         return self.cv2(torch.cat(y, 1))
 
 
@@ -752,9 +758,12 @@ class CIB(nn.Module):
         )
 
         self.add = shortcut and c1 == c2
+        print('CIB initialized successfully.')
+
 
     def forward(self, x):
         """'forward()' applies the YOLO FPN to input data."""
+        out = self.cv1(x)
         return x + self.cv1(x) if self.add else self.cv1(x)
 
 class C2fCIB(C2f):
@@ -765,6 +774,7 @@ class C2fCIB(C2f):
         expansion.
         """
         super().__init__(c1, c2, n, shortcut, g, e)
+      
         self.m = nn.ModuleList(CIB(self.c, self.c, shortcut, e=1.0, lk=lk) for _ in range(n))
 
 
@@ -812,18 +822,23 @@ class PSA(nn.Module):
         )
         
     def forward(self, x):
+        print('shape x in psa', x.shape)
         a, b = self.cv1(x).split((self.c, self.c), dim=1)
         b = b + self.attn(b)
         b = b + self.ffn(b)
+        print('shape y in psa', self.cv2(torch.cat((a, b), 1)).shape)
         return self.cv2(torch.cat((a, b), 1))
 
 class SCDown(nn.Module):
     def __init__(self, c1, c2, k, s):
         super().__init__()
+       
         self.cv1 = Conv(c1, c2, 1, 1)
         self.cv2 = Conv(c2, c2, k=k, s=s, g=c2, act=False)
 
     def forward(self, x):
+        print('shaPe x in scdown ',x.shape)
+        print('shape y in scdown ', self.cv2(self.cv1(x)).shape)
         return self.cv2(self.cv1(x))
 
 
@@ -837,10 +852,12 @@ class SEBlock(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
+        print('shape x in seblock', x.shape)
         b, c, _, _ = x.size()
         y = self.global_avg_pool(x)
         y = self.fc1(y)
         y = self.relu(y)
         y = self.fc2(y)
         y = self.sigmoid(y)
+        print('shape y in seblock', (x*y.expand_as(x)).shape)
         return x * y.expand_as(x)
