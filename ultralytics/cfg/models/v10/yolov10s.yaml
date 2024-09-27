@@ -48,4 +48,4 @@ head:
   - [-1, 3, C2fCIB, [1024, True, True]] # 22 (P5/32-large)
 
 
-  - [[21, 25, 29], 1, v10Detect, [nc]] # Detect(P3, P4, P5)
+  - [[22, 26, 29], 1, v10Detect, [nc]] # Detect(P3, P4, P5)
