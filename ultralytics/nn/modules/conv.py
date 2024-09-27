@@ -320,10 +320,10 @@ class CBAM(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through both attention mechanisms."""
-        print('cbam input shape',x.shape)
+      #  print('cbam input shape',x.shape)
         x = self.channel_attention(x)  # Apply channel attention
         x = self.spatial_attention(x)  # Apply spatial attention
-        print('cbam output shape',x.shape)
+    #    print('cbam output shape',x.shape)
         return x
 
 
@@ -342,12 +342,12 @@ class ECAAttention(nn.Module):
 
     def forward(self, x):
         # feature descriptor on the global spatial information
-        print('eca input shape',x.shape)
+     #   print('eca input shape',x.shape)
         y = self.avg_pool(x)
         y = self.conv(y.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
         # Multi-scale information fusion
         y = self.sigmoid(y)
-        print('eca output shape',(x*y.expand_as(x)).shape)
+     #   print('eca output shape',(x*y.expand_as(x)).shape)
 
         return x * y.expand_as(x)
 
@@ -363,8 +363,8 @@ class Concat(nn.Module):
 
     def forward(self, x):
         """Forward pass for the YOLOv8 mask Proto module."""
-        print('concat input shape',x[0].shape)
-        print('concat input shape',x[1].shape)
+    #    print('concat input shape',x[0].shape)
+    #    print('concat input shape',x[1].shape)
         
         
         return torch.cat(x, self.d)
