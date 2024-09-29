@@ -50,7 +50,8 @@ from .block import (
     C2fCIB,
     SCDown,
     RepVGGDW,
-    SEBlock
+    SEBlock,
+    CoordAtt
 )
 from .conv import (
     CBAM,
@@ -147,5 +148,6 @@ __all__ = (
     "RepVGGDW",
     "SEBlock",
     "ECAAttention",
-    "v10Detect"
+    "v10Detect",
+    "CoordAtt"
 )
