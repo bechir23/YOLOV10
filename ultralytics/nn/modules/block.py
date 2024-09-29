@@ -862,3 +862,42 @@ class SEBlock(nn.Module):
         y = self.sigmoid(y)
       #  print('shape y in seblock', (x*y.expand_as(x)).shape)
         return x * y.expand_as(x)
+
+ 
+class CoordAtt(nn.Module):
+    def __init__(self, in_channels, reduction=32):
+        super(CoordAtt, self).__init__()
+        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))  # Average pool along the height
+        self.pool_w = nn.AdaptiveAvgPool2d((1, None))  # Average pool along the width
+        
+        mip = max(8, in_channels // reduction)
+        
+        self.conv1 = nn.Conv2d(in_channels, mip, kernel_size=1, stride=1, padding=0)
+        self.conv2_h = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
+        self.conv2_w = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
+        
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+
+        # Apply pooling along the height and width axes
+        x_h = self.pool_h(x)  # (b, c, h, 1)
+        x_w = self.pool_w(x).permute(0, 1, 3, 2)  # (b, c, 1, w) and then transpose
+
+        # Concatenate and pass through the first convolution
+        y = torch.cat([x_h, x_w], dim=2)  # Concatenate along the height axis
+        y = self.conv1(y)  # (b, mip, h + w, 1)
+
+        # Split back into height and width features
+        x_h, x_w = torch.split(y, [h, w], dim=2)
+        x_w = x_w.permute(0, 1, 3, 2)  # Transpose width features back to original shape
+
+        # Apply separate convolutions for height and width attention
+        a_h = self.sigmoid(self.conv2_h(x_h))  # (b, c, h, 1)
+        a_w = self.sigmoid(self.conv2_w(x_w))  # (b, c, 1, w)
+
+        # Apply the attention maps
+        out = x * a_h * a_w
+
+        return out
