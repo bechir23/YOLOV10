@@ -51,7 +51,8 @@ from .block import (
     SCDown,
     RepVGGDW,
     SEBlock,
-    CoordAtt
+    CoordAtt,
+    EMA
 )
 from .conv import (
     CBAM,
@@ -149,5 +150,6 @@ __all__ = (
     "SEBlock",
     "ECAAttention",
     "v10Detect",
-    "CoordAtt"
+    "CoordAtt",
+    "EMA"
 )
