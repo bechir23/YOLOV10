@@ -917,7 +917,7 @@ class EMA(nn.Module):
 
     def forward(self, x):
         b, c, h, w = x.size()
-        print('input_tensor', x.shape)
+        
         group_x = x.reshape(b * self.groups, -1, h, w)  # b*g,c//g,h,w
         x_h = self.pool_h(group_x)
         x_w = self.pool_w(group_x).permute(0, 1, 3, 2)
@@ -930,6 +930,6 @@ class EMA(nn.Module):
         x21 = self.softmax(self.agp(x2).reshape(b * self.groups, -1, 1).permute(0, 2, 1))
         x22 = x1.reshape(b * self.groups, c // self.groups, -1)  # b*g, c//g, hw
         weights = (torch.matmul(x11, x12) + torch.matmul(x21, x22)).reshape(b * self.groups, 1, h, w)
-        print('output_tensor', (group_x * weights.sigmoid()).reshape(b, c, h, w).shape)
+        
         return (group_x * weights.sigmoid()).reshape(b, c, h, w)
 
