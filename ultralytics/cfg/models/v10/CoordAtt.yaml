@@ -12,17 +12,11 @@ backbone:
   - [-1, 3, C2f, [128, True]]
   - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
   - [-1, 6, C2f, [256, True]]
-  #- [-1, 1, CBAM, [256,3]]  # CBAM after the C2f block for the P3 stage
   - [-1, 1, CoordAtt, [256]] # 4-P4/16
-  #- [-1, 1, SCDown, [512, 3, 2]] # 5-P4/16
   - [-1, 1, Conv, [512, 3, 2]]  
-  #- [-1, 1, SEBlock, [256]]  #  SE Block after SCDown 'half of c2f channels'
   - [-1, 6, C2f, [512, True]] #6
-  #- [-1, 1, CBAM, [512,3]]  # CBAM after the C2f block for the P4 stage
   - [-1, 1, CoordAtt, [256]]
   - [-1, 1, Conv, [1024, 3, 2]]  #P5/32
-  #- [-1, 1, SCDown, [1024, 3, 2]] # 7-P5/32
- # - [-1, 1, SEBlock, [512]]  #  SE Block after SCDown (half of c2f channels)
   - [-1, 3, C2fCIB, [1024, True, True]]
   - [-1, 1, SPPF, [1024, 5]] # 9
   - [-1, 1, PSA, [1024]] # 10
@@ -32,29 +26,22 @@ head:
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 7], 1, Concat, [1]] # cat backbone P4
   - [-1, 3, C2f, [512]] # 13 #512
- # - [-1, 1, ECAAttention, [256]]  #  ECA after the C2f block for medium feature maps
   - [-1, 1, SEBlock, [256]]
 
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 4], 1, Concat, [1]] # cat backbone P3
   - [-1, 3, C2f, [256]] # 16 (P3/8-small) #256
-  #- [-1, 1, ECAAttention, [128]]  #  ECA after the C2f block for medium feature maps
   - [-1, 1, SEBlock, [128]]
 
   - [-2, 1, Conv, [256, 3, 2]] #256
   - [[-1, 15], 1, Concat, [1]] # cat head P4
   - [-1, 3, C2f, [512]] # 19 (P4/16-medium)#512
-#  - [-1, 1, ECAAttention, [256]]  #  ECA after the C2f block for medium feature maps
   - [-1, 1, SEBlock, [256]]
 
 
   - [-2, 1, Conv, [256, 3, 2]] #256
-
-  #- [-2, 1, SCDown, [512, 3, 2]] #512
   - [[-1, 12], 1, Concat, [1]] # cat head P5
- # - [-1, 1, ECAAttention, [1024]]  #  ECA after the C2f block for largerfeature maps #1024
   - [-1, 3, C2fCIB, [1024, True, True]] # 22 (P5/32-large)
-  #- [-1, 1, ECAAttention, [512]]  #  ECA after the C2f block for larger feature maps
   - [-1, 1, SEBlock, [512]]
 
 
