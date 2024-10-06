@@ -13,7 +13,7 @@ backbone:
   - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
   - [-1, 6, C2f, [256, True]]
   - [-1, 1, Conv, [512, 3, 2]] # 5-P4/16
-  - [-1, 1, CBAM, [512]]  #  SE Block after SCDown (half of c2f channels)
+  - [-1, 1, CBAM, [512,3]]  #  SE Block after SCDown (half of c2f channels)
   - [-1, 6, C2f, [512, True]] #6
   - [-1, 1, SCDown, [1024, 3, 2]] # 5-P4/16
   - [-1, 1, SEBlock, [512]]  #  SE Block after SCDown (half of c2f channels)
