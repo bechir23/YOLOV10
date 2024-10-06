@@ -43,4 +43,4 @@ head:
   - [-1, 3, C3Ghost, [1024, 1024]] # Feature extraction using C3Ghost at P5 level (P5/32-large)
 
   # Detection layer to output results for each level (P3, P4, P5)
-  - [[20, 24, 28], 1, v10Detect, [nc]] # Detect at different scales (P3, P4, P5)
+  - [[19, 23, 27], 1, v10Detect, [nc]] # Detect at different scales (P3, P4, P5)
