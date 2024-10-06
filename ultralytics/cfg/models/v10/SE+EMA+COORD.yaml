@@ -4,23 +4,21 @@ scales: # model compound scaling constants, i.e. 'model=yolov8n.yaml' will call 
   # [depth, width, max_channels]
   s: [0.33, 0.50, 1024]
 
-
 backbone:
   # [from, repeats, module, args]
-  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+  - [-1, 1, Conv, [64, 3, 2]]  # 0-P1/2
   - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
-  - [-1, 3, C2f, [128, True]]
+  - [-1, 3, C2f, [128, True]] 
   - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
   - [-1, 6, C2f, [256, True]]
-  - [-1, 1, CoordAtt, [256]] # 4-P4/16
-  - [-1, 1, Conv, [512, 3, 2]]  
-  - [-1, 6, C2f, [512, True]] #6
-  - [-1, 1, CoordAtt, [256]]
-  - [-1, 1, Conv, [1024, 3, 2]]  #P5/32
+  - [-1, 1, CoordAtt, [256]]  # Applying Coordinate Attention (P4/16)
+  - [-1, 1, Conv, [512, 3, 2]] 
+  - [-1, 6, C2f, [512, True]] # 6
+  - [-1, 1, CoordAtt, [512]]  # Corrected channel size from [256] to [512]
+  - [-1, 1, Conv, [1024, 3, 2]] # P5/32
   - [-1, 3, C2fCIB, [1024, True, True]]
   - [-1, 1, SPPF, [1024, 5]] # 9
   - [-1, 1, PSA, [1024]] # 10
-
 
 head:
   # Applying SEBlock after C3Ghost for refining fine-grained features
@@ -37,7 +35,7 @@ head:
 
   - [-1, 1, Conv, [256, 3, 2]] # Downsample to P4 level
   - [[-1, 15], 1, Concat, [1]] # Concatenate head P4 features
-  - [-1, 3, C2f, [512] # Feature extraction using C3Ghost at P4 level (P4/16-medium)
+  - [-1, 3, C2f, [512]] # Feature extraction using C3Ghost at P4 level (P4/16-medium)
   - [-1, 1, EMA, [512]] # Applying EMA to emphasize prominent features at P4
 
   - [-1, 1, SCDown, [512, 3, 2]] # Downsample to P5 level
