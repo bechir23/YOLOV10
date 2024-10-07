@@ -45,5 +45,5 @@ head:
 
 
   # Detection layer to output results for each level (P3, P4, P5)
-  - [[20, 24, 28], 1, v10Detect, [nc]] # Detect at different scales (P3, P4, P5)
+  - [[20, 24, 29], 1, v10Detect, [nc]] # Detect at different scales (P3, P4, P5)
 
