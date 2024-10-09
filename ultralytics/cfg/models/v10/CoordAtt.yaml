@@ -53,4 +53,4 @@ head:
 
 
 
-  - [[20, 24, 29], 1, v10Detect, [nc]] # Detect(P3, P4, P5)
+  - [[20, 24, 28], 1, v10Detect, [nc]] # Detect(P3, P4, P5)
