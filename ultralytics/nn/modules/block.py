@@ -901,29 +901,30 @@ class CoordAtt(nn.Module):
         out = x * a_h * a_w
 
         return out
-import torch
-import torch.nn as nn
-
 class EMA(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, reduction=16, kernel_size=3):
         super(EMA, self).__init__()
-        self.query_conv = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
-        self.key_conv = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
-        self.value_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1)
-        self.softmax = nn.Softmax(dim=-1)
-        self.gamma = nn.Parameter(torch.zeros(1))
+        self.in_channels = in_channels
+        self.reduction = reduction
+        self.kernel_size = kernel_size
+        self.inter_channels = in_channels // reduction
+
+        self.local_conv = nn.Conv2d(in_channels, self.inter_channels, kernel_size=kernel_size, padding=kernel_size//2, bias=False)
+        self.bn = nn.BatchNorm2d(self.inter_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.fc1 = nn.Linear(self.inter_channels, self.inter_channels // reduction, bias=False)
+        self.fc2 = nn.Linear(self.inter_channels // reduction, self.inter_channels, bias=False)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        batch_size, C, H, W = x.size()
-        query = self.query_conv(x).view(batch_size, -1, H * W).permute(0, 2, 1)  # B, HW, C
-        key = self.key_conv(x).view(batch_size, -1, H * W)  # B, C, HW
-        attention = self.softmax(torch.bmm(query, key))  # B, HW, HW
-        value = self.value_conv(x).view(batch_size, -1, H * W)  # B, C, HW
-
-        out = torch.bmm(value, attention.permute(0, 2, 1))  # B, C, HW
-        out = out.view(batch_size, C, H, W)
-
-        out = self.gamma * out + x  # Weighted residual connection
-        return out
-
-
+        batch_size, channels, height, width = x.size()
+        local_context = self.local_conv(x)
+        local_context = self.bn(local_context)
+        local_context = self.relu(local_context)
+        y = local_context.view(batch_size, self.inter_channels, -1).mean(dim=2)
+        y = self.fc1(y)
+        y = self.relu(y)
+        y = self.fc2(y)
+        y = self.sigmoid(y)
+        y = y.view(batch_size, self.inter_channels, 1, 1)
+        return x * y.expand_as(x)
