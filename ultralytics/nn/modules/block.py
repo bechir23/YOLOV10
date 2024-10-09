@@ -901,30 +901,33 @@ class CoordAtt(nn.Module):
         out = x * a_h * a_w
 
         return out
-class EMA(nn.Module):
-    def __init__(self, in_channels, reduction=16, kernel_size=3):
-        super(EMA, self).__init__()
-        self.in_channels = in_channels
-        self.reduction = reduction
-        self.kernel_size = kernel_size
-        self.inter_channels = in_channels // reduction
 
-        self.local_conv = nn.Conv2d(in_channels, self.inter_channels, kernel_size=kernel_size, padding=kernel_size//2, bias=False)
-        self.bn = nn.BatchNorm2d(self.inter_channels)
-        self.relu = nn.ReLU(inplace=True)
-        self.fc1 = nn.Linear(self.inter_channels, self.inter_channels // reduction, bias=False)
-        self.fc2 = nn.Linear(self.inter_channels // reduction, self.inter_channels, bias=False)
-        self.sigmoid = nn.Sigmoid()
+class EMA(nn.Module):
+    def __init__(self, in_channels, kernel_size=3):
+        super(EMA, self).__init__()
+        self.kernel_size = kernel_size
+        self.padding = kernel_size // 2
+        self.query_conv = nn.Conv2d(in_channels, in_channels, kernel_size, padding=self.padding)
+        self.key_conv = nn.Conv2d(in_channels, in_channels, kernel_size, padding=self.padding)
+        self.value_conv = nn.Conv2d(in_channels, in_channels, kernel_size, padding=self.padding)
+        self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x):
         batch_size, channels, height, width = x.size()
-        local_context = self.local_conv(x)
-        local_context = self.bn(local_context)
-        local_context = self.relu(local_context)
-        y = local_context.view(batch_size, self.inter_channels, -1).mean(dim=2)
-        y = self.fc1(y)
-        y = self.relu(y)
-        y = self.fc2(y)
-        y = self.sigmoid(y)
-        y = y.view(batch_size, self.inter_channels, 1, 1)
-        return x * y.expand_as(x)
+
+        # Compute queries, keys, and values
+        query = self.query_conv(x).view(batch_size, channels, -1)  # (B, C, H*W)
+        key = self.key_conv(x).view(batch_size, channels, -1)      # (B, C, H*W)
+        value = self.value_conv(x).view(batch_size, channels, -1)  # (B, C, H*W)
+
+        # Compute attention scores
+        attention_scores = torch.bmm(query.permute(0, 2, 1), key)  # (B, H*W, H*W)
+        attention_scores = self.softmax(attention_scores)           # Apply softmax to get attention weights
+
+        # Compute the output as a weighted sum of the values
+        attention_output = torch.bmm(attention_scores, value.permute(0, 2, 1))  # (B, H*W, C)
+
+        # Reshape back to the original spatial dimensions
+        attention_output = attention_output.view(batch_size, channels, height, width)
+
+        return attention_output + x  # Skip connection
