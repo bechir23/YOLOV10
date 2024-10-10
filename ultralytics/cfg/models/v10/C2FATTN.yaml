@@ -17,7 +17,7 @@ backbone:
   - [-1, 1, SCDown, [1024, 3, 2]]  #P5/32
   - [-1, 3, C2fCIB, [1024, True, True]]
   - [-1, 1, SPPF, [1024, 5]] # 9
-  - [-1, 1, PSA, [1024]] # 10
+  #- [-1, 1, PSA, [1024]] # 10
 
 # YOLOv10.0n head
 head:
@@ -34,7 +34,7 @@ head:
   #- [-1, 1, SEBlock, [128]]
 
   - [-1, 1, Conv, [256, 3, 2]] #256
-  - [[-1, 13], 1, Concat, [1]] # cat head P4
+  - [[-1, 12], 1, Concat, [1]] # cat head P4
   - [-1, 3, C2f, [512]] # 19 (P4/16-medium)#512
  # - [-1, 1, SEBlock, [256]]
   #- [-1, 1, CoordAtt, [256]]
@@ -43,10 +43,10 @@ head:
 
   #- [-2, 1, Conv, [256, 3, 2]] #256
   - [-1, 1, SCDown, [512, 3, 2]] 
-  - [[-1, 10], 1, Concat, [1]] # cat head P5
+  - [[-1, 9], 1, Concat, [1]] # cat head P5
   - [-1, 3, C2fCIB, [1024, True, True]] # 22 (P5/32-large)
   #- [-1, 1, SEBlock, [512]]
 
 
 
-  - [[16, 19, 22], 1, v10Detect, [nc]] # Detect(P3, P4, P5)
+  - [[15, 18, 21], 1, v10Detect, [nc]] # Detect(P3, P4, P5)
