@@ -866,6 +866,7 @@ class SEBlock(nn.Module):
         return x * y.expand_as(x)
 
  
+
 class CoordAtt(nn.Module):
     def __init__(self, in_channels, reduction=32):
         super(CoordAtt, self).__init__()
@@ -873,6 +874,7 @@ class CoordAtt(nn.Module):
         self.pool_w = nn.AdaptiveAvgPool2d((1, None))  # Average pool along the width
         
         mip = max(8, in_channels // reduction)
+        self.bn1 = nn.BatchNorm2d(mip)
         
         self.conv1 = nn.Conv2d(in_channels, mip, kernel_size=1, stride=1, padding=0)
         self.conv2_h = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
@@ -890,7 +892,7 @@ class CoordAtt(nn.Module):
         # Concatenate and pass through the first convolution
         y = torch.cat([x_h, x_w], dim=2)  # Concatenate along the height axis
         y = self.conv1(y)  # (b, mip, h + w, 1)
-
+        y = self.bn1(y)
         # Split back into height and width features
         x_h, x_w = torch.split(y, [h, w], dim=2)
         x_w = x_w.permute(0, 1, 3, 2)  # Transpose width features back to original shape
