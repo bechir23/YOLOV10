@@ -904,32 +904,31 @@ class CoordAtt(nn.Module):
 
         return out
 
-class EMA(nn.Module):
-    def __init__(self, in_channels, kernel_size=3):
+    class EMA(nn.Module):
+    def __init__(self, in_channels, reduction=16):
         super(EMA, self).__init__()
-        self.kernel_size = kernel_size
-        self.padding = kernel_size // 2
-        self.query_conv = nn.Conv2d(in_channels, in_channels, kernel_size, padding=self.padding)
-        self.key_conv = nn.Conv2d(in_channels, in_channels, kernel_size, padding=self.padding)
-        self.value_conv = nn.Conv2d(in_channels, in_channels, kernel_size, padding=self.padding)
-        self.softmax = nn.Softmax(dim=-1)
+        self.in_channels = in_channels
+        self.reduction = reduction
+
+        # First convolution to learn spatial representation
+        self.conv1 = nn.Conv2d(in_channels, in_channels // reduction, kernel_size=1)
+        self.conv2 = nn.Conv2d(in_channels // reduction, in_channels, kernel_size=1)
 
     def forward(self, x):
         batch_size, channels, height, width = x.size()
 
-        # Compute queries, keys, and values
-        query = self.query_conv(x).view(batch_size, channels, -1)  # (B, C, H*W)
-        key = self.key_conv(x).view(batch_size, channels, -1)      # (B, C, H*W)
-        value = self.value_conv(x).view(batch_size, channels, -1)  # (B, C, H*W)
+        # Step 1: Calculate coordinate features
+        x_avg = torch.mean(x, dim=1, keepdim=True)  # Average pooling along channels
+        x_max = torch.max(x, dim=1, keepdim=True).values  # Max pooling along channels
 
-        # Compute attention scores
-        attention_scores = torch.bmm(query.permute(0, 2, 1), key)  # (B, H*W, H*W)
-        attention_scores = self.softmax(attention_scores)           # Apply softmax to get attention weights
+        # Step 2: Concatenate and process features
+        coord_features = torch.cat((x_avg, x_max), dim=1)  # Concatenate average and max features
+        coord_features = F.relu(self.conv1(coord_features))  # First convolution
+        coord_attention = self.conv2(coord_features)  # Second convolution
 
-        # Compute the output as a weighted sum of the values
-        attention_output = torch.bmm(attention_scores, value.permute(0, 2, 1))  # (B, H*W, C)
+        # Step 3: Apply sigmoid to get attention weights
+        attention_weights = torch.sigmoid(coord_attention)
 
-        # Reshape back to the original spatial dimensions
-        attention_output = attention_output.view(batch_size, channels, height, width)
+        # Step 4: Scale the input feature map with the attention weights
+        return x * attention_weights
 
-        return attention_output + x  # Skip connection
