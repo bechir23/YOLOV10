@@ -628,8 +628,8 @@ class WorldModel(DetectionModel):
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
                 self._profile_one_layer(m, x, dt)
-            if isinstance(m, C2fAttn):
-                x = m(x, txt_feats)
+           # if isinstance(m, C2fAttn):
+           #     x = m(x, txt_feats)
             elif isinstance(m, WorldDetect):
                 x = m(x, ori_txt_feats)
             elif isinstance(m, ImagePoolingAttn):
@@ -902,11 +902,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
-            if m is C2fAttn:
-                args[1] = make_divisible(min(args[1], max_channels // 2) * width, 8)  # embed channels
-                args[2] = int(
-                    max(round(min(args[2], max_channels // 2 // 32)) * width, 1) if args[2] > 1 else args[2]
-                )  # num heads
+        #    if m is C2fAttn:
+         #       args[1] = make_divisible(min(args[1], max_channels // 2) * width, 8)  # embed channels
+         #       args[2] = int(
+           #         max(round(min(args[2], max_channels // 2 // 32)) * width, 1) if args[2] > 1 else args[2]
+          #      )  # num heads
 
             args = [c1, c2, *args[1:]]
             if m in (BottleneckCSP, C1, C2, C2f, C2fAttn, C3, C3TR, C3Ghost, C3x, RepC3, C2fCIB):
