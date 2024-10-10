@@ -903,8 +903,7 @@ class CoordAtt(nn.Module):
         out = x * a_h * a_w
 
         return out
-
-    class EMA(nn.Module):
+class EMA(nn.Module):
     def __init__(self, in_channels, reduction=16):
         super(EMA, self).__init__()
         self.in_channels = in_channels
