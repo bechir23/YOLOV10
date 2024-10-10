@@ -315,13 +315,13 @@ class CBAM(nn.Module):
 
     def __init__(self, channels: int, kernel_size=7):
         super().__init__()
-        self.channel_attention = ChannelAttention(channels)
+      #   self.channel_attention = ChannelAttention(channels)
         self.spatial_attention = SpatialAttention(kernel_size)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through both attention mechanisms."""
       #  print('cbam input shape',x.shape)
-        x = self.channel_attention(x)  # Apply channel attention
+    #    x = self.channel_attention(x)  # Apply channel attention
         x = self.spatial_attention(x)  # Apply spatial attention
     #    print('cbam output shape',x.shape)
         return x
