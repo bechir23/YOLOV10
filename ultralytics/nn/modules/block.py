@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad ,  SpatialAttention
+from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad ,  SpatialAttention, ChannelAttention
 from .transformer import TransformerBlock
 from ultralytics.utils.torch_utils import fuse_conv_and_bn
 
