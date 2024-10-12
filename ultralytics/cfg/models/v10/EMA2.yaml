@@ -43,4 +43,4 @@ head:
   - [-1, 1, CoordAtt, [1024]]    
 
 
-  - [[19, 23, 27], 1, v10Detect, [nc]] # Detect(P3, P4, P5)
+  - [[19, 23, 28], 1, v10Detect, [nc]] # Detect(P3, P4, P5)
