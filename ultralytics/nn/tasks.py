@@ -948,8 +948,9 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is SEBlock:
             c1, c2 = ch[f], args[0]
             args = [c1] 
-        elif m is CoordAtt :
-            args=[c1]
+        elif m is CoordAtt: 
+            c1 = ch[f]
+            args = [c1]
         elif m is EMA :
             c1=ch[f]
             args=[c1]
