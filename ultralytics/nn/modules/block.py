@@ -869,17 +869,16 @@ class SEBlock(nn.Module):
 class CoordAtt(nn.Module):
     def __init__(self, in_channels, reduction=32):
         super(CoordAtt, self).__init__()
-        self.channel_attention=ChannelAttention(in_channels)
 
-        self.pool_h = nn.AdaptiveAvgPool2d((None, 3))  # Average pool along the height
-        self.pool_w = nn.AdaptiveAvgPool2d((3, None))  # Average pool along the width
+        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))  # Average pool along the height
+        self.pool_w = nn.AdaptiveAvgPool2d((1, None))  # Average pool along the width
         
         mip = max(8, in_channels // reduction)
         self.bn1 = nn.BatchNorm2d(mip)
         
         self.conv1 = nn.Conv2d(in_channels, mip, kernel_size=1, stride=1, padding=0)
-        self.conv2_h = nn.Conv2d(mip, in_channels, kernel_size=(1,3), stride=1, padding=0)
-        self.conv2_w = nn.Conv2d(mip, in_channels, kernel_size=(3,1), stride=1, padding=0)
+        self.conv2_h = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
+        self.conv2_w = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
 
         
         self.sigmoid = nn.Sigmoid()
@@ -903,7 +902,7 @@ class CoordAtt(nn.Module):
         a_w = self.sigmoid(self.conv2_w(x_w))  # (b, c, 1, w)
 
         # Apply the attention maps
-        out = self.channel_attention(x) * a_h * a_w
+        out = x * a_h * a_w
 
         return out
 
