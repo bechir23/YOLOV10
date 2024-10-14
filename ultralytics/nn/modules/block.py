@@ -906,8 +906,16 @@ class EMA(nn.Module):
         x2_processed = self.gn(group_x * self.conv2_h(x_h_inv.sigmoid()) * self.conv2_w(x_w_inv.permute(0, 1, 3, 2)).sigmoid())
 
         # Combine both x1 and x2 to capture rich feature representations
-        output = (x1 + x2_processed).reshape(b, c, h, w)  # Combine features from x1 and x2
-        return output
+        x1_flat = x1.view(b * self.groups, c // self.groups, -1)  # Reshape x1 to (b*g, c//g, hw)
+        x2_flat = x2_processed.view(b * self.groups, c // self.groups, -1)  # Reshape x2_processed to (b*g, c//g, hw)
+
+        # Perform matrix multiplication
+        output = torch.matmul(x1_flat.transpose(1, 2), x2_flat)  # (b*g, hw, c//g)
+
+        # Reshape back to original dimensions
+        output = output.reshape(b, c, h, w)  # Reshape to (b, c, h, w)
+
+        return output        
 
 
 class CoordAtt(nn.Module):
