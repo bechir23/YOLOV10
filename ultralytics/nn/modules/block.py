@@ -907,3 +907,45 @@ class EMA(nn.Module):
         # Combine both x1 and x2 to capture rich feature representations
         output = (x1 + x2_processed).reshape(b, c, h, w)  # Combine features from x1 and x2
         return output
+
+class CoordAtt(nn.Module):
+    def __init__(self, channels, c2=None, factor=32):
+        super(CoordAt, self).__init__()
+        self.groups = factor
+        assert channels // self.groups > 0
+        self.gn = nn.GroupNorm(channels // self.groups, channels // self.groups)
+        
+        self.conv1x1 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0)
+        self.conv2_h = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0)
+        self.conv2_w = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0)
+        
+        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))  # Keep height dimension
+        self.pool_w = nn.AdaptiveAvgPool2d((1, None))  # Keep width dimension
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        print('hhhhhh')
+        group_x = x.reshape(b * self.groups, -1, h, w)  # b*g, c//g, h, w
+        
+        # Processing for x1 (horizontal features)
+        x_h = self.pool_h(group_x)  # Pooled height
+        x_w = self.pool_w(group_x).permute(0, 1, 3, 2)  # Pooled width with flipped height
+        hw = self.conv1x1(torch.cat([x_h, x_w], dim=2))
+        x_h, x_w = torch.split(hw, [h, w], dim=2)
+
+        # Calculate features while preserving spatial information for x1
+        x1 = self.gn(group_x * self.conv2_h(x_h.sigmoid()) * self.conv2_w(x_w.permute(0, 1, 3, 2)).sigmoid())
+        
+        # Processing for x2 (vertical features)
+        x_h_inv = self.pool_w(group_x).permute(0, 1, 3, 2)  # Inverted pooled height
+        x_w_inv = self.pool_h(group_x)  # Inverted pooled width
+        hw_inv = self.conv1x1(torch.cat([x_h_inv, x_w_inv], dim=2))  # Concatenate with flipped dimensions
+        x_h_inv, x_w_inv = torch.split(hw_inv, [w, h], dim=2)  # Split back into height and width
+
+        # Calculate features for x2 using the inverse operations
+        x2_processed = self.gn(group_x * self.conv2_h(x_h_inv.sigmoid()) * self.conv2_w(x_w_inv.permute(0, 1, 3, 2)).sigmoid())
+
+        # Combine both x1 and x2 to capture rich feature representations
+        output = (x1 + x2_processed).reshape(b, c, h, w)  # Combine features from x1 and x2
+        return output
+
