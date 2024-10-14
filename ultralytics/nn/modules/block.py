@@ -866,7 +866,8 @@ class SEBlock(nn.Module):
         return x * y.expand_as(x)
 
 
-
+import torch
+import torch.nn as nn
 
 class EMA(nn.Module):
     def __init__(self, channels, c2=None, factor=32):
@@ -889,7 +890,7 @@ class EMA(nn.Module):
         # Processing for x1 (horizontal features)
         x_h = self.pool_h(group_x)  # Pooled height
         x_w = self.pool_w(group_x).permute(0, 1, 3, 2)  # Pooled width with flipped height
-        hw = self.conv1*1(torch.cat([x_h, x_w], dim=2))
+        hw = self.conv1x1(torch.cat([x_h, x_w], dim=2))
         x_h, x_w = torch.split(hw, [h, w], dim=2)
 
         # Calculate features while preserving spatial information for x1
@@ -907,6 +908,7 @@ class EMA(nn.Module):
         # Combine both x1 and x2 to capture rich feature representations
         output = (x1 + x2_processed).reshape(b, c, h, w)  # Combine features from x1 and x2
         return output
+
 
 class CoordAtt(nn.Module):
     def __init__(self, channels, c2=None, factor=32):
