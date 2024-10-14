@@ -889,7 +889,7 @@ class CoordAtt(nn.Module):
         # Processing for x1 (horizontal features)
         x_h = self.pool_h(group_x)  # Pooled height
         x_w = self.pool_w(group_x).permute(0, 1, 3, 2)  # Pooled width with flipped height
-        hw = self.conv1x1(torch.cat([x_h, x_w], dim=2))
+        hw = self.conv1*1(torch.cat([x_h, x_w], dim=2))
         x_h, x_w = torch.split(hw, [h, w], dim=2)
 
         # Calculate features while preserving spatial information for x1
@@ -908,29 +908,6 @@ class CoordAtt(nn.Module):
         output = (x1 + x2_processed).reshape(b, c, h, w)  # Combine features from x1 and x2
         return output
 
-
-    def forward(self, x):
-        b, c, h, w = x.size()
-
-        # Apply pooling along the height and width axes
-        x_h = self.pool_h(x)  # (b, c, h, 1)
-        x_w = self.pool_w(x).permute(0, 1, 3, 2)  # (b, c, 1, w) and then transpose
-
-        # Concatenate and pass through the first convolution
-        y = torch.cat([x_h, x_w], dim=2)  # Concatenate along the height axis
-        y = self.conv1(y)  # (b, mip, h + w, 1)
-        # Split back into height and width features
-        x_h, x_w = torch.split(y, [h, w], dim=2)
-        x_w = x_w.permute(0, 1, 3, 2)  # Transpose width features back to original shape
-
-        # Apply separate convolutions for height and width attention
-        a_h = self.sigmoid(self.conv2_h(x_h))  # (b, c, h, 1)
-        a_w = self.sigmoid(self.conv2_w(x_w))  # (b, c, 1, w)
-
-        # Apply the attention maps
-        out = x * a_h * a_w
-
-        return out
 
 class EMA(nn.Module):
     def __init__(self, channels, c2=None, factor=32):
