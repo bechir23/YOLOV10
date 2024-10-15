@@ -955,21 +955,12 @@ class EMA(nn.Module):
 
         # Calculate features for x2 using the inverse operations
         x2_processed = x * self.conv2_h(x_h_inv.sigmoid()) * self.conv2_w(x_w_inv.permute(0, 1, 3, 2)).sigmoid()
-        output=x1+x2_processed
+        output=x1*x2_processed
       #  combined=torch.cat([x1, x2_processed], dim=1)
     # Perform matrix multiplication (element-wise)
     #    output = self.activation(self.conv_final(combined))  # Pass through conv3x3
 
     # Combine height and width features using an additional convolution
-        x1_flat = x1.view(b, c, -1)  # Reshape x1 to (B, C, H*W)
-        x2_flat = x2_processed.view(b, c, -1)  # Reshape x2_processed to (B, C, H*W)
-
-        # Perform matrix multiplication
-        output = torch.matmul(x1_flat.transpose(1, 2), x2_flat)  # Output shape will be (B, H*W, H*W)
-
-        # Optionally reshape output to (B, C, H, W) or keep it as is based on your requirements
-        # For now, let's reshape it back to (B, C, H, W)
-        output = output.view(b, -1, h, w)  # This assumes you want to combine into a new channel dimension
-
+      
 
         return  output
