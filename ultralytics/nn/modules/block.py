@@ -918,7 +918,7 @@ import torch.nn as nn
 
 class EMA(nn.Module):
     def __init__(self, channels, c2=None, factor=32):
-        super(CoordAt, self).__init__()
+        super(EMA, self).__init__()
         self.groups = factor
         assert channels // self.groups > 0
         self.gn = nn.GroupNorm(channels // self.groups, channels // self.groups)
