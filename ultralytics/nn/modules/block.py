@@ -866,49 +866,45 @@ class SEBlock(nn.Module):
         return x * y.expand_as(x)
 
 class CoordAtt(nn.Module):
-    def __init__(self, channels, factor=32):
+    def __init__(self, in_channels, reduction=32):
         super(CoordAtt, self).__init__()
-        self.groups = factor
-        assert channels // self.groups > 0
+        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))  # Average pool along the height
+        self.pool_w = nn.AdaptiveAvgPool2d((1, None))  # Average pool along the width
+        self.conv3x3 = nn.Conv2d(channels, channels , kernel_size=3, padding=1)
         
-        self.conv1x1 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0)
-        self.conv2_h = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0)
-        self.conv2_w = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0)
-        self.conv_final = nn.Conv2d(channels, channels, kernel_size=3, padding=1)  # Extra convolution to combine features
+        mip = max(8, in_channels // reduction)
+        self.bn1 = nn.BatchNorm2d(mip)
         
-        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))  # Keep height dimension
-        self.pool_w = nn.AdaptiveAvgPool2d((1, None))  # Keep width dimension
-        self.activation = nn.ReLU()  # ReLU activation
+        self.conv1 = nn.Conv2d(in_channels, mip, kernel_size=1, stride=1, padding=0)
+        self.conv2_h = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
+        self.conv2_w = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
+        self.ReLu=nn.LeakyReLu()
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         b, c, h, w = x.size()
-        
-        # Processing for x1 (horizontal features)
-        x_h = self.pool_h(x)  # Pooled height
-        x_w = self.pool_w(x).permute(0, 1, 3, 2)  # Pooled width with flipped height
-        hw = self.conv1x1(torch.cat([x_h, x_w], dim=2))
-        x_h, x_w = torch.split(hw, [h, w], dim=2)
 
-        # Calculate features for x1 (horizontal) 
-        x1 = x * self.conv2_h(x_h) * self.conv2_w(x_w.permute(0, 1, 3, 2))
+        # Apply pooling along the height and width axes
+        x_h = self.pool_h(x)  # (b, c, h, 1)
+        x_w = self.pool_w(x).permute(0, 1, 3, 2)  # (b, c, 1, w) and then transpose
 
-        # Processing for x2 (vertical features)
-        x_h_inv = self.pool_w(x).permute(0, 1, 3, 2)  # Inverted pooled height
-        x_w_inv = self.pool_h(x)  # Inverted pooled width
-        hw_inv = self.conv1x1(torch.cat([x_h_inv, x_w_inv], dim=2))  # Concatenate
-        x_h_inv, x_w_inv = torch.split(hw_inv, [w, h], dim=2)  # Split back into height and width
+        # Concatenate and pass through the first convolution
+        y = torch.cat([x_h, x_w], dim=2)  # Concatenate along the height axis
+        y = self.conv1(y)  # (b, mip, h + w, 1)
+        y = self.bn1(y)
+        # Split back into height and width features
+        y=self.conv3x3(y)
+        x_h, x_w = torch.split(y, [h, w], dim=2)
+        x_w = x_w.permute(0, 1, 3, 2)  # Transpose width features back to original shape
 
-        # Calculate features for x2 (vertical)
-        x2_processed = x * self.conv2_h(x_h_inv) * self.conv2_w(x_w_inv.permute(0, 1, 3, 2))
+        # Apply separate convolutions for height and width attention
+        a_h = self.sigmoid(self.conv2_h(self.ReLu(x_h)))  # (b, c, h, 1)
+        a_w = self.sigmoid(self.conv2_w(self.ReLu(x_w)))  # (b, c, 1, w)
 
-        # Combine both x1 and x2 (concatenation instead of addition)
-        combined = torch.cat([x1, x2_processed], dim=1)  # Concatenate along channel dimension
-        
-        # Extra convolution to process combined features
-        output = self.conv_final(combined)
-  #      output = self.activation(output)  # Apply activation function
+        # Apply the attention maps
+        out = x * a_h * a_w
 
-        return output
+        return out
 import torch
 import torch.nn as nn
 
