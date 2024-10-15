@@ -906,7 +906,7 @@ class EMA(nn.Module):
         
         # Extra convolution to process combined features
         output = self.conv_final(combined)
-        output = self.activation(output)  # Apply activation function
+  #      output = self.activation(output)  # Apply activation function
 
         return output
 
