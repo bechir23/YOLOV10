@@ -895,7 +895,6 @@ class CoordAtt(nn.Module):
         y = torch.cat([x_h, x_w], dim=2)  # Concatenate along the height axis
         y = self.conv1(y)  # (b, mip, h + w, 1)
         y = self.bn1(y)
-        print('shape y in coordatt', y.shape)
         y = self.conv3x3(y)
         y = self.relu(y)
         
