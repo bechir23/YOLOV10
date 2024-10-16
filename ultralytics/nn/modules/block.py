@@ -913,7 +913,7 @@ class CoordAtt(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, mip, kernel_size=1, stride=1, padding=0)
         self.conv2_h = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
         self.conv2_w = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
-        self.conv3x3 = nn.Conv2d(in_channels, mip, kernel_size=3, stride=1, padding=1)
+        self.conv3x3 = nn.Conv2d(mip, in_channels, kernel_size=3, stride=1, padding=1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
