@@ -902,50 +902,52 @@ class SEBlock(nn.Module):
         return x * y.expand_as(x)
  
 
-
 class CoordAtt(nn.Module):
-    def __init__(self, in_channels, reduction=32):
+    def __init__(self, in_channels):
         super(CoordAtt, self).__init__()
-        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))  # Average pool along the height
-        self.pool_w = nn.AdaptiveAvgPool2d((1, None))  # Average pool along the width
         
+        # 1x1 convolution to transform the feature map
+        self.conv1x1 = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
         
-        mip = max(8, in_channels // reduction)
-        self.bn1 = nn.BatchNorm2d(mip)
+        # 3x3 convolution for transforming channel dimensions
+        self.conv3x3 = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
         
-        self.conv1 = nn.Conv2d(in_channels, mip, kernel_size=1, stride=1, padding=0)
-        self.conv3x3 = nn.Conv2d(mip, mip, kernel_size=3, padding=1)
-        self.conv2_h = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
-        self.conv2_w = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
-        self.relu = nn.LeakyReLU()
-        self.sigmoid = nn.Sigmoid()
+        # Batch normalization layers
+        self.bn1 = nn.BatchNorm2d(in_channels)
+        self.bn2 = nn.BatchNorm2d(in_channels)
 
     def forward(self, x):
-        b, c, h, w = x.size()
-
-        # Apply pooling along the height and width axes
-        x_h = self.pool_h(x)  # (b, c, h, 1)
-        x_w = self.pool_w(x).permute(0, 1, 3, 2)  # (b, c, 1, w) and then transpose
-
-        # Concatenate and pass through the first convolution
-        y = torch.cat([x_h, x_w], dim=2)  # Concatenate along the height axis
-        y = self.conv1(y)  # (b, mip, h + w, 1)
-        y = self.bn1(y)
-        y = self.conv3x3(y)
-        y = self.relu(y)
+        # Step 1: Coordinate Information Embedding
+        # Average pooling along height (h) and width (w)
+        x_avg_h = torch.mean(x, dim=2, keepdim=True)  # Shape: (B, C, 1, W)
+        x_avg_w = torch.mean(x, dim=3, keepdim=True)  # Shape: (B, C, H, 1)
         
-        # Split back into height and width features
-        x_h, x_w = torch.split(y, [h, w], dim=2)
-        x_w = x_w.permute(0, 1, 3, 2)  # Transpose width features back to original shape
+        # Step 2: Feature Aggregation
+        # Concatenate along channel dimension
+        E_x = torch.cat((x_avg_h, x_avg_w), dim=1)  # Shape: (B, 2C, 1, 1)
 
-        # Apply separate convolutions for height and width attention
-        a_h = self.sigmoid(self.conv2_h(x_h))  # (b, c, h, 1)
-        a_w = self.sigmoid(self.conv2_w(x_w))  # (b, c, 1, w)
+        # Step 3: Coordinate Attention Generation
+        # Pass through 1x1 convolution
+        F1 = self.conv1x1(E_x)  # Shape: (B, C, 1, 1)
+        
+        # Generate the intermediate feature map f
+        f = self.bn1(F1)
+        
+        # Step 4: Slicing into independent features
+        fh = f.squeeze(3)  # Shape: (B, C, 1, 1) -> (B, C, 1)
+        fw = f.squeeze(2)  # Shape: (B, C, 1, 1) -> (B, C, 1)
 
-        # Apply the attention maps
-        out = x * a_h * a_w
+        # Step 5: Transforming channels to equalize dimensions
+        fh = self.conv3x3(fh)  # Shape: (B, C, 1, 1)
+        fw = self.conv3x3(fw)  # Shape: (B, C, 1, 1)
 
-        return out
+        # Step 6: Channel fusion to generate attention map
+        attention_map = fh + fw  # Element-wise addition
+        attention_map = F.sigmoid(attention_map)  # Apply sigmoid activation
+
+        # Step 7: Scale the original feature map with the attention map
+        return x * attention_map.expand_as(x)  # Broadcasting to match dimensions
+
 """
 class EMA(nn.Module):
     def __init__(self, in_channels):
