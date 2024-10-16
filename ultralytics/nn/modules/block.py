@@ -922,22 +922,17 @@ class CoordAtt(nn.Module):
         # Apply pooling along the height and width axes
         x_h = self.pool_h(x)  # (b, c, h, 1)
         x_w = self.pool_w(x).permute(0, 1, 3, 2)  # (b, c, 1, w) and then transpose
-        z = torch.cat([x_h, x_w], dim=2)
         # Concatenate and pass through the first convolution
         y = torch.cat([x_h, x_w], dim=2)  # Concatenate along the height axis
         y = self.conv1(y)  # (b, mip, h + w, 1)
         y = self.bn1(y)
         # Split back into height and width features
-        z=self.conv3x3(x)
-        z=self.bn1(z) 
         x_h, x_w = torch.split(y, [h, w], dim=2)
-        z_h, z_w = torch.split(z, [h, w], dim=2)
 
         x_w = x_w.permute(0, 1, 3, 2)  # Transpose width features back to original shape
-        z_w= z_w.permute(0, 1, 3, 2)
         # Apply separate convolutions for height and width attention
-        a_h = self.sigmoid(self.conv2_h(x_h)) + self.sigmoid(self.conv2_h(z_h))  # (b, c, h, 1)
-        a_w = self.sigmoid(self.conv2_w(x_w)) + self.sigmoid(self.conv2_w(z_w))   # (b, c, 1, w)
+        a_h = self.sigmoid(self.conv2_h(x_h)) + self.sigmoid(self.conv3x3(x_h))   # (b, c, h, 1)
+        a_w = self.sigmoid(self.conv2_w(x_w)) + self.sigmoid(self.conv3x3(x_w))    # (b, c, 1, w)
     
 
         # Apply the attention maps
