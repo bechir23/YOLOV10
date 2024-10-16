@@ -911,9 +911,40 @@ class CoordAtt(nn.Module):
 
         return out
 
-
-
 class EMA(nn.Module):
+    def __init__(self, in_channels):
+        super(EMA, self).__init__()
+        self.in_channels = in_channels
+        self.query_conv = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        
+        # Query, key, and value convolutions
+        query = self.query_conv(x).view(b, -1, h * w)  # Shape: [B, C/8, H*W]
+        key = self.key_conv(x).view(b, -1, h * w)      # Shape: [B, C/8, H*W]
+        value = self.value_conv(x).view(b, -1, h * w)  # Shape: [B, C, H*W]
+        
+        # Transpose the key for matrix multiplication
+        key = key.permute(0, 2, 1)  # Shape: [B, H*W, C/8]
+        
+        # Calculate attention map using matrix multiplication
+        attention = torch.bmm(query, key)  # Shape: [B, C/8, C/8]
+        attention = F.softmax(attention, dim=-1)
+        
+        # Apply attention to the value
+        out = torch.bmm(value, attention.permute(0, 2, 1))  # Shape: [B, C, H*W]
+        out = out.view(b, c, h, w)  # Reshape back to original image shape
+        
+        # Apply residual connection and return
+        out = self.gamma * out + x
+        return out
+
+
+"""class EMA(nn.Module):
     def __init__(self, channels, c2=None, factor=32):
         super(EMA, self).__init__()
         self.groups = factor
@@ -940,4 +971,4 @@ class EMA(nn.Module):
         x21 = self.softmax(self.agp(x2).reshape(b * self.groups, -1, 1).permute(0, 2, 1))
         x22 = x1.reshape(b * self.groups, c // self.groups, -1)  # b*g, c//g, hw
         weights = (torch.matmul(x11, x12) + torch.matmul(x21, x22)).reshape(b * self.groups, 1, h, w)
-        return (group_x * weights.sigmoid()).reshape(b, c, h, w)
+        return (group_x * weights.sigmoid()).reshape(b, c, h, w)"""
