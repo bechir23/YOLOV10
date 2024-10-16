@@ -946,7 +946,7 @@ class CoordAtt(nn.Module):
         out = x * a_h * a_w
 
         return out
-
+"""
 class EMA(nn.Module):
     def __init__(self, in_channels):
         super(EMA, self).__init__()
@@ -978,9 +978,9 @@ class EMA(nn.Module):
         # Apply residual connection and return
         out = self.gamma * out + x
         return out
+"""
 
-
-"""class EMA(nn.Module):
+class EMA(nn.Module):
     def __init__(self, channels, c2=None, factor=32):
         super(EMA, self).__init__()
         self.groups = factor
@@ -1007,4 +1007,4 @@ class EMA(nn.Module):
         x21 = self.softmax(self.agp(x2).reshape(b * self.groups, -1, 1).permute(0, 2, 1))
         x22 = x1.reshape(b * self.groups, c // self.groups, -1)  # b*g, c//g, hw
         weights = (torch.matmul(x11, x12) + torch.matmul(x21, x22)).reshape(b * self.groups, 1, h, w)
-        return (group_x * weights.sigmoid()).reshape(b, c, h, w)"""
+        return (group_x * weights.sigmoid()).reshape(b, c, h, w)
