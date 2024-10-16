@@ -38,6 +38,7 @@ from .block import (
     Proto,
     RepC3,
     ResNetLayer,
+    ResNetBlock,
     ContrastiveHead,
     BNContrastiveHead,
     RepNCSPELAN4,
@@ -151,5 +152,6 @@ __all__ = (
     "ECAAttention",
     "v10Detect",
     "CoordAtt",
-    "EMA"
+    "EMA",
+    "ResNetBlock"
 )
