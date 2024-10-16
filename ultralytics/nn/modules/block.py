@@ -902,6 +902,7 @@ class SEBlock(nn.Module):
         return x * y.expand_as(x)
  
 
+
 class CoordAtt(nn.Module):
     def __init__(self, in_channels):
         super(CoordAtt, self).__init__()
@@ -918,28 +919,28 @@ class CoordAtt(nn.Module):
 
     def forward(self, x):
         # Step 1: Coordinate Information Embedding
-        # Average pooling along height (h) and width (w)
-        x_avg_h = torch.mean(x, dim=2, keepdim=True)  # Shape: (B, C, 1, W)
-        x_avg_w = torch.mean(x, dim=3, keepdim=True)  # Shape: (B, C, H, 1)
+        # Adaptive pooling along height (h) and width (w)
+        x_avg_h = F.adaptive_avg_pool2d(x, (1, x.size(3)))  # Shape: (B, C, 1, W)
+        x_avg_w = F.adaptive_avg_pool2d(x, (x.size(2), 1))  # Shape: (B, C, H, 1)
         
         # Step 2: Feature Aggregation
         # Concatenate along channel dimension
-        E_x = torch.cat((x_avg_h, x_avg_w), dim=1)  # Shape: (B, 2C, 1, 1)
+        E_x = torch.cat((x_avg_h, x_avg_w), dim=1)  # Shape: (B, 2C, 1, W)
 
         # Step 3: Coordinate Attention Generation
         # Pass through 1x1 convolution
-        F1 = self.conv1x1(E_x)  # Shape: (B, C, 1, 1)
+        F1 = self.conv1x1(E_x)  # Shape: (B, C, 1, W)
         
         # Generate the intermediate feature map f
         f = self.bn1(F1)
         
         # Step 4: Slicing into independent features
-        fh = f.squeeze(3)  # Shape: (B, C, 1, 1) -> (B, C, 1)
-        fw = f.squeeze(2)  # Shape: (B, C, 1, 1) -> (B, C, 1)
+        fh = f.squeeze(3)  # Shape: (B, C, 1, W) -> (B, C, 1)
+        fw = f.squeeze(2)  # Shape: (B, C, 1, W) -> (B, C, W)
 
         # Step 5: Transforming channels to equalize dimensions
         fh = self.conv3x3(fh)  # Shape: (B, C, 1, 1)
-        fw = self.conv3x3(fw)  # Shape: (B, C, 1, 1)
+        fw = self.conv3x3(fw)  # Shape: (B, C, H, 1)
 
         # Step 6: Channel fusion to generate attention map
         attention_map = fh + fw  # Element-wise addition
