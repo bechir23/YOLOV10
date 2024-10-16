@@ -38,6 +38,7 @@ __all__ = (
     "CBFuse",
     "CBLinear",
     "Silence",
+    "ResNetBlock"
 )
 
 
@@ -371,11 +372,9 @@ class BottleneckCSP(nn.Module):
         return self.cv4(self.act(self.bn(torch.cat((y1, y2), 1))))
 
 
-class ResNetBlock(nn.Module):
-    """ResNet block with standard convolution layers."""
+"""class ResNetBlock(nn.Module):
 
     def __init__(self, c1, c2, s=1, e=4):
-        """Initialize convolution with given parameters."""
         super().__init__()
         c3 = e * c2
         self.cv1 = Conv(c1, c2, k=1, s=1, act=True)
@@ -384,8 +383,45 @@ class ResNetBlock(nn.Module):
         self.shortcut = nn.Sequential(Conv(c1, c3, k=1, s=s, act=False)) if s != 1 or c1 != c3 else nn.Identity()
 
     def forward(self, x):
-        """Forward pass through the ResNet block."""
         return F.relu(self.cv3(self.cv2(self.cv1(x))) + self.shortcut(x))
+"""
+
+class ResNetBlock(nn.Module):
+    """Lightweight ResNet block with depthwise separable convolution layers."""
+    
+    def __init__(self, c1, c2, s=1, e=1):
+        """Initialize with reduced expansion and depthwise separable convolutions."""
+        super().__init__()
+        c3 = e * c2  # Reduced expansion factor
+
+        # Pointwise convolution to reduce channels
+        self.cv1 = nn.Conv2d(c1, c2, kernel_size=1, stride=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(c2)
+        
+        # Depthwise convolution (separable)
+        self.dwconv = nn.Conv2d(c2, c2, kernel_size=3, stride=s, padding=1, groups=c2, bias=False)
+        self.bn2 = nn.BatchNorm2d(c2)
+        
+        # Pointwise convolution to expand channels
+        self.cv3 = nn.Conv2d(c2, c3, kernel_size=1, stride=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(c3)
+        
+        # Shortcut connection, if necessary
+        self.shortcut = nn.Sequential(
+            nn.Conv2d(c1, c3, kernel_size=1, stride=s, bias=False),
+            nn.BatchNorm2d(c3)
+        ) if s != 1 or c1 != c3 else nn.Identity()
+
+    def forward(self, x):
+        """Forward pass through the lightweight ResNet block."""
+        identity = self.shortcut(x)
+        
+        out = F.relu(self.bn1(self.cv1(x)))  # First 1x1 conv
+        out = F.relu(self.bn2(self.dwconv(out)))  # Depthwise conv
+        out = self.bn3(self.cv3(out))  # Second 1x1 conv
+        
+        out += identity  # Add shortcut connection
+        return F.relu(out)
 
 
 class ResNetLayer(nn.Module):
