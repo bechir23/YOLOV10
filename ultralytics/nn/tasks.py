@@ -40,6 +40,7 @@ from ultralytics.nn.modules import (
     RepC3,
     RepConv,
     ResNetLayer,
+    ResNetBlock,
     RTDETRDecoder,
     Segment,
     WorldDetect,
