@@ -903,9 +903,7 @@ class Attention(nn.Module):
     # Reshape queries and keys back to (B, heads, H, W, dim) for position addition
       q = q.view(B, self.num_heads, H, W, self.key_dim)
       k = k.view(B, self.num_heads, H, W, self.key_dim)
-      print(f"q shape: {q.shape}")  # Expected: [B, num_heads, H, W, key_dim]
-      print(f"k shape: {k.shape}")  # Expected: [B, num_heads, H, W, key_dim]
-
+   
     # Make sure positional encoding has appropriate dimensions
       pos_h = self.pos_h[:, :, :H, :].unsqueeze(3)  # Shape [1, heads, H, 1, key_dim]
       pos_w = self.pos_w[:, :, :W, :].unsqueeze(2)  # Shape [1, heads, 1, W, key_dim]
@@ -917,17 +915,12 @@ class Attention(nn.Module):
     # Flatten q and k for attention calculation
 
       q = q.view(B, self.num_heads, N, self.key_dim)
-      print(f"q shape after view: {q.shape}")  # Expected: [B, num_heads, H*W, key_dim]
       k = k.view(B, self.num_heads, N, self.key_dim)
 
     # Compute attention scores and continue forward
       attn = (q @ k.transpose(-2, -1)) * self.scale  # attn shape [B, num_heads, H*W, H*W]
       attn = attn.softmax(dim=-1)
-      print(f"attn shape: {attn.shape}")  # Expected: [B, num_heads, H*W, H*W]
-      print(f"v shape: {v.shape}")  # Expected: [B, num_heads, H*W, head_dim]
-      print(f"x shape after attn @ v: {x.shape}")  # Expected: [B, C, H, W]
-      print(f"Positional encoding shape: {self.pe(x).shape}")  # Should match x shape
-
+   
 
 # v has shape [B, num_heads, H*W, head_dim]
       v = v.view(B, self.num_heads, H * W , self.head_dim)
