@@ -853,7 +853,7 @@ class PSA(nn.Module):
         self.c = int(c1 * e)
         self.cv1 = Conv(c1, 2 * self.c, 1, 1)
         self.cv2 = Conv(2 * self.c, c1, 1)
-        
+        self.coord_att = CoordAtt(self.c)
         self.attn = Attention(self.c, attn_ratio=0.5, num_heads=self.c // 64)
         self.ffn = nn.Sequential(
             Conv(self.c, self.c*2, 1),
@@ -863,6 +863,8 @@ class PSA(nn.Module):
     def forward(self, x):
      #   print('shape x in psa', x.shape)
         a, b = self.cv1(x).split((self.c, self.c), dim=1)
+        a= a + self.coord_att(a)
+        b= b + self.coord_att(b)
         b = b + self.attn(b)
         b = b + self.ffn(b)
     #    print('shape y in psa', self.cv2(torch.cat((a, b), 1)).shape)
@@ -907,13 +909,15 @@ class CoordAtt(nn.Module):
         self.pool_h = nn.AdaptiveAvgPool2d((None, 1))  # Average pool along the height
         self.pool_w = nn.AdaptiveAvgPool2d((1, None))  # Average pool along the width
         
+        
         mip = max(8, in_channels // reduction)
         self.bn1 = nn.BatchNorm2d(mip)
         
         self.conv1 = nn.Conv2d(in_channels, mip, kernel_size=1, stride=1, padding=0)
+        self.conv3x3 = nn.Conv2d(mip, mip, kernel_size=3, padding=1)
         self.conv2_h = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
         self.conv2_w = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
-        self.conv3x3 = nn.Conv2d(mip, in_channels, kernel_size=3, stride=1, padding=1)
+        self.relu = nn.LeakyReLU()
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -922,23 +926,26 @@ class CoordAtt(nn.Module):
         # Apply pooling along the height and width axes
         x_h = self.pool_h(x)  # (b, c, h, 1)
         x_w = self.pool_w(x).permute(0, 1, 3, 2)  # (b, c, 1, w) and then transpose
+
         # Concatenate and pass through the first convolution
         y = torch.cat([x_h, x_w], dim=2)  # Concatenate along the height axis
         y = self.conv1(y)  # (b, mip, h + w, 1)
         y = self.bn1(y)
+        y = self.conv3x3(y)
+        
         # Split back into height and width features
         x_h, x_w = torch.split(y, [h, w], dim=2)
-
         x_w = x_w.permute(0, 1, 3, 2)  # Transpose width features back to original shape
+
         # Apply separate convolutions for height and width attention
-        a_h = self.sigmoid(self.conv2_h(x_h)) + self.sigmoid(self.conv3x3(x_h))   # (b, c, h, 1)
-        a_w = self.sigmoid(self.conv2_w(x_w)) + self.sigmoid(self.conv3x3(x_w))    # (b, c, 1, w)
-    
+        a_h = self.sigmoid(self.conv2_h(x_h))  # (b, c, h, 1)
+        a_w = self.sigmoid(self.conv2_w(x_w))  # (b, c, 1, w)
 
         # Apply the attention maps
         out = x * a_h * a_w
 
         return out
+
 
 """
 class EMA(nn.Module):
