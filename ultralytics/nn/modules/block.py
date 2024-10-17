@@ -817,7 +817,7 @@ class C2fCIB(C2f):
         self.m = nn.ModuleList(CIB(self.c, self.c, shortcut, e=1.0, lk=lk) for _ in range(n))
 
 
-class Attention(nn.Module):
+"""class Attention(nn.Module):
     def __init__(self, dim, num_heads=8,
                  attn_ratio=0.5):
         super().__init__()
@@ -843,7 +843,107 @@ class Attention(nn.Module):
         attn = attn.softmax(dim=-1)
         x = (v @ attn.transpose(-2, -1)).view(B, C, H, W) + self.pe(v.reshape(B, C, H, W))
         x = self.proj(x)
-        return x
+        return x"""
+
+class Attention(nn.Module):
+    def __init__(self, dim, num_heads=8, attn_ratio=0.5, image_size=(32, 32)):
+        super().__init__()
+        self.num_heads = num_heads
+        self.head_dim = dim // num_heads
+        self.key_dim = int(self.head_dim * attn_ratio)
+        self.scale = self.key_dim ** -0.5
+        nh_kd = self.key_dim * num_heads
+        h = dim + nh_kd * 2
+        
+        # Learnable positional encoding for height and width
+        self.pos_embed_h = nn.Parameter(torch.zeros(1, num_heads, image_size[0], self.key_dim))
+        self.pos_embed_w = nn.Parameter(torch.zeros(1, num_heads, image_size[1], self.key_dim))
+        
+        self.qkv = Conv(dim, h, 1, act=False)
+        self.proj = Conv(dim, dim, 1, act=False)
+        self.pe = Conv(dim, dim, 3, 1, g=dim, act=False)
+        
+        # Initialize positional encodings with sin/cos functions (optional)
+        self.init_positional_encoding(image_size)
+
+    def init_positional_encoding(self, image_size):
+     h, w = image_size
+     position_h = torch.arange(h, dtype=torch.float).unsqueeze(1)
+     position_w = torch.arange(w, dtype=torch.float).unsqueeze(1)
+    
+     div_term = torch.exp(torch.arange(0, self.key_dim, 2).float() * -(math.log(10000.0) / self.key_dim))
+
+    # Positional encoding for height
+     pos_h = torch.zeros(h, self.key_dim)
+     pos_h[:, 0::2] = torch.sin(position_h * div_term)
+     pos_h[:, 1::2] = torch.cos(position_h * div_term)
+
+    # Positional encoding for width
+     pos_w = torch.zeros(w, self.key_dim)
+     pos_w[:, 0::2] = torch.sin(position_w * div_term)
+     pos_w[:, 1::2] = torch.cos(position_w * div_term)
+
+    # Expand dimensions for batch and head dimensions
+     pos_h = pos_h.unsqueeze(0).unsqueeze(0)  # Shape [1, 1, H, key_dim]
+     pos_w = pos_w.unsqueeze(0).unsqueeze(0)  # Shape [1, 1, W, key_dim]
+
+    # Register these as buffers
+     self.register_buffer('pos_h', pos_h)
+     self.register_buffer('pos_w', pos_w)
+
+    def forward(self, x):
+      B, C, H, W = x.shape
+      N = H * W
+    
+    # Apply qkv projection
+      qkv = self.qkv(x)
+      q, k, v = qkv.view(B, self.num_heads, self.key_dim*2 + self.head_dim, N).split([self.key_dim, self.key_dim, self.head_dim], dim=2)
+    
+    # Reshape queries and keys back to (B, heads, H, W, dim) for position addition
+      q = q.view(B, self.num_heads, H, W, self.key_dim)
+      k = k.view(B, self.num_heads, H, W, self.key_dim)
+      print(f"q shape: {q.shape}")  # Expected: [B, num_heads, H, W, key_dim]
+      print(f"k shape: {k.shape}")  # Expected: [B, num_heads, H, W, key_dim]
+
+    # Make sure positional encoding has appropriate dimensions
+      pos_h = self.pos_h[:, :, :H, :].unsqueeze(3)  # Shape [1, heads, H, 1, key_dim]
+      pos_w = self.pos_w[:, :, :W, :].unsqueeze(2)  # Shape [1, heads, 1, W, key_dim]
+
+    # Add positional encoding to query and key
+      q = q + pos_h + pos_w
+      k = k + pos_h + pos_w
+
+    # Flatten q and k for attention calculation
+
+      q = q.view(B, self.num_heads, N, self.key_dim)
+      print(f"q shape after view: {q.shape}")  # Expected: [B, num_heads, H*W, key_dim]
+      k = k.view(B, self.num_heads, N, self.key_dim)
+
+    # Compute attention scores and continue forward
+      attn = (q @ k.transpose(-2, -1)) * self.scale  # attn shape [B, num_heads, H*W, H*W]
+      attn = attn.softmax(dim=-1)
+      print(f"attn shape: {attn.shape}")  # Expected: [B, num_heads, H*W, H*W]
+      print(f"v shape: {v.shape}")  # Expected: [B, num_heads, H*W, head_dim]
+      print(f"x shape after attn @ v: {x.shape}")  # Expected: [B, C, H, W]
+      print(f"Positional encoding shape: {self.pe(x).shape}")  # Should match x shape
+
+
+# v has shape [B, num_heads, H*W, head_dim]
+      v = v.view(B, self.num_heads, H * W , self.head_dim)
+
+# Now, apply attention to v
+      x = (attn @ v)  # Output shape will be [B, num_heads, H*W, head_dim]
+
+# Reshape x to [B, C, H, W] where C = num_heads * head_dim
+      x = x.permute(0, 1, 3, 2).reshape(B, -1, H, W)  # Shape [B, C, H, W]
+
+# Add positional encoding (assuming self.pe outputs shape [B, C, H, W])
+      x = x + self.pe(v.reshape(B, -1, H, W))  # Make sure self.pe output matches x shape
+
+# Project the output back to original dimension
+      x = self.proj(x)  # Shape [B, C_out, H, W]
+      return x
+
 
 class PSA(nn.Module):
 
@@ -853,7 +953,6 @@ class PSA(nn.Module):
         self.c = int(c1 * e)
         self.cv1 = Conv(c1, 2 * self.c, 1, 1)
         self.cv2 = Conv(2 * self.c, c1, 1)
-        self.coord_att = CoordAtt(self.c)
         self.attn = Attention(self.c, attn_ratio=0.5, num_heads=self.c // 64)
         self.ffn = nn.Sequential(
             Conv(self.c, self.c*2, 1),
@@ -861,13 +960,9 @@ class PSA(nn.Module):
         )
         
     def forward(self, x):
-     #   print('shape x in psa', x.shape)
         a, b = self.cv1(x).split((self.c, self.c), dim=1)
-        a= a + self.coord_att(a)
-        b= b + self.coord_att(b)
         b = b + self.attn(b)
         b = b + self.ffn(b)
-    #    print('shape y in psa', self.cv2(torch.cat((a, b), 1)).shape)
         return self.cv2(torch.cat((a,b), 1))
 
 class SCDown(nn.Module):
