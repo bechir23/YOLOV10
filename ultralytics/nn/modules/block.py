@@ -868,7 +868,7 @@ class PSA(nn.Module):
         b = b + self.attn(b)
         b = b + self.ffn(b)
     #    print('shape y in psa', self.cv2(torch.cat((a, b), 1)).shape)
-        return self.cv2(torch.cat((a, b), 1))
+        return self.cv2(torch.cat((a,b), 1))
 
 class SCDown(nn.Module):
     def __init__(self, c1, c2, k, s):
@@ -917,7 +917,7 @@ class CoordAtt(nn.Module):
         self.conv3x3 = nn.Conv2d(mip, mip, kernel_size=3, padding=1)
         self.conv2_h = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
         self.conv2_w = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
-        self.relu = nn.LeakyReLU()
+        #self.relu = nn.LeakyReLU()
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -931,7 +931,7 @@ class CoordAtt(nn.Module):
         y = torch.cat([x_h, x_w], dim=2)  # Concatenate along the height axis
         y = self.conv1(y)  # (b, mip, h + w, 1)
         y = self.bn1(y)
-        y = self.conv3x3(y)
+   #     y = self.conv3x3(y)
         
         # Split back into height and width features
         x_h, x_w = torch.split(y, [h, w], dim=2)
