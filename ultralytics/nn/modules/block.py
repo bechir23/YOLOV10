@@ -896,7 +896,7 @@ class DeformableAttention(nn.Module):
         self,
         dim,
         dim_head=16,  # Reduced head dimension
-        heads=4,  # Reduced number of heads
+        heads=1,  # Reduced number of heads
         dropout=0.,
         downsample_factor=1,
         offset_scale=None,
