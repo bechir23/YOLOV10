@@ -894,23 +894,30 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from einops import rearrange
 
 class DeformableAttention(nn.Module):
-    def __init__(self, in_channels, out_channels, num_heads=4, offset_scale=1.0):
+    def __init__(self, in_channels, out_channels, num_heads=4, offset_scale=1.0, device='cuda'):
         super(DeformableAttention, self).__init__()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         
         self.num_heads = num_heads
         self.offset_scale = offset_scale
+        self.device = device
         
-        self.query_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.key_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.value_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.query_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1).to(device)
+        self.key_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1).to(device)
+        self.value_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1).to(device)
         
         # Offset layers
-        self.offset_conv = nn.Conv2d(in_channels, 2 * num_heads, kernel_size=3, padding=1)
+        self.offset_conv = nn.Conv2d(in_channels, 2 * num_heads, kernel_size=3, padding=1).to(device)
         
         # Output convolution
-        self.output_conv = nn.Conv2d(out_channels, in_channels, kernel_size=1)
+        self.output_conv = nn.Conv2d(out_channels, in_channels, kernel_size=1).to(device)
 
     def forward(self, x):
         b, c, h, w = x.size()
@@ -922,22 +929,26 @@ class DeformableAttention(nn.Module):
         
         # Compute offsets
         offsets = self.offset_conv(x)  # (b, 2 * num_heads, h, w)
-        offsets = offsets.view(b, 2, self.num_heads, h, w).permute(0, 2, 3, 4, 1)  # (b, num_heads, h, w, 2)
-        offsets = offsets * self.offset_scale
+        offsets = offsets.view(b, self.num_heads, 2, h, w)  # (b, num_heads, 2, h, w)
         
         # Create the sampling grid
-        grid_x = torch.arange(w, device=x.device).view(1, 1, 1, -1).expand(b, self.num_heads, h, -1)
-        grid_y = torch.arange(h, device=x.device).view(1, 1, -1, 1).expand(b, self.num_heads, -1, w)
+        grid_x = torch.arange(w, device=self.device).view(1, 1, 1, -1).expand(b, self.num_heads, h, -1)
+        grid_y = torch.arange(h, device=self.device).view(1, 1, -1, 1).expand(b, self.num_heads, -1, w)
         
         # Apply offsets to grid
-        grid_x = (grid_x + offsets[..., 0]).clamp(0, w - 1)
-        grid_y = (grid_y + offsets[..., 1]).clamp(0, h - 1)
+        grid_x = (grid_x + offsets[..., 0] * self.offset_scale).clamp(0, w - 1)
+        grid_y = (grid_y + offsets[..., 1] * self.offset_scale).clamp(0, h - 1)
 
         # Normalize grid to [-1, 1]
         grid_x = 2.0 * grid_x / (w - 1) - 1.0
         grid_y = 2.0 * grid_y / (h - 1) - 1.0
         
-        grid = torch.stack((grid_x, grid_y), dim=-1)
+        # Combine the grids and create a 4D grid
+        grid = torch.stack((grid_x, grid_y), dim=-1)  # (b, num_heads, h, w, 2)
+        grid = grid.permute(0, 1, 3, 2)  # (b, num_heads, 2, h, w)
+
+        # Reshape to 4D for grid_sample
+        grid = grid.reshape(b * self.num_heads, 2, h, w)  # (b * num_heads, 2, h, w)
 
         # Sample values
         sampled_v = F.grid_sample(v, grid, mode='bilinear', padding_mode='zeros', align_corners=True)
@@ -954,7 +965,7 @@ class DeformableAttention(nn.Module):
         return out
 
 # Usage example:
-# model = DeformableAttention(in_channels=256, out_channels=256, num_heads=4)
+# Specify the device you want to use
 
 class PSA(nn.Module):
 
