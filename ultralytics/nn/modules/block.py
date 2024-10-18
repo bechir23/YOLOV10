@@ -891,7 +891,7 @@ class DepthwiseSeparableConv(nn.Module):
     def forward(self, x):
         return self.pointwise(self.depthwise(x))
 
-class LightweightDeformableAttention(nn.Module):
+class DeformableAttention(nn.Module):
     def __init__(
         self,
         dim,
