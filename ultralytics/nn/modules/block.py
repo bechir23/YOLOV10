@@ -890,96 +890,71 @@ class DepthwiseSeparableConv(nn.Module):
 
     def forward(self, x):
         return self.pointwise(self.depthwise(x))
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from einops import rearrange
 
 class DeformableAttention(nn.Module):
-    def __init__(
-        self,
-        dim,
-        dim_head=16,  # Reduced head dimension
-        heads=1,  # Reduced number of heads
-        dropout=0.,
-        downsample_factor=1,
-        offset_scale=None,
-        offset_groups=None,
-        offset_kernel_size=3,  # Reduced kernel size
-        depth=1,  # Reduced depth
-    ):
-        super().__init__()
-        offset_scale = default(offset_scale, downsample_factor)
+    def __init__(self, in_channels, out_channels, num_heads=4, offset_scale=1.0):
+        super(DeformableAttention, self).__init__()
         
-        inner_dim = dim_head * heads
-        self.scale = dim_head ** -0.5
-        self.heads = heads
-
-        self.downsample_factor = downsample_factor
-
-        self.to_offsets = nn.Sequential(
-            DepthwiseSeparableConv(dim, dim, kernel_size=offset_kernel_size, stride=downsample_factor),
-            nn.GELU(),
-            nn.Conv2d(dim, 2, 1, bias=False),
-            nn.Tanh(),
-            Scale(offset_scale)
-        )
-
-        self.mlp = nn.Sequential(
-            nn.Linear(2, dim),
-            nn.ReLU(),
-            nn.Linear(dim, heads)  # Final output reduced to heads
-        )
-
-        self.dropout = nn.Dropout(dropout)
-        self.to_q = nn.Conv2d(dim, inner_dim, 1, bias=False)
-        self.to_k = nn.Conv2d(dim, inner_dim, 1, bias=False)
-        self.to_v = nn.Conv2d(dim, inner_dim, 1, bias=False)
-        self.to_out = nn.Conv2d(inner_dim, dim, 1)
+        self.num_heads = num_heads
+        self.offset_scale = offset_scale
+        
+        self.query_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        
+        # Offset layers
+        self.offset_conv = nn.Conv2d(in_channels, 2 * num_heads, kernel_size=3, padding=1)
+        
+        # Output convolution
+        self.output_conv = nn.Conv2d(out_channels, in_channels, kernel_size=1)
 
     def forward(self, x):
-        b, _, h, w = x.shape
+        b, c, h, w = x.size()
+        
+        # Compute query, key, value
+        q = self.query_conv(x)  # (b, out_channels, h, w)
+        k = self.key_conv(x)    # (b, out_channels, h, w)
+        v = self.value_conv(x)  # (b, out_channels, h, w)
+        
+        # Compute offsets
+        offsets = self.offset_conv(x)  # (b, 2 * num_heads, h, w)
+        offsets = offsets.view(b, 2, self.num_heads, h, w).permute(0, 2, 3, 4, 1)  # (b, num_heads, h, w, 2)
+        offsets = offsets * self.offset_scale
+        
+        # Create the sampling grid
+        grid_x = torch.arange(w, device=x.device).view(1, 1, 1, -1).expand(b, self.num_heads, h, -1)
+        grid_y = torch.arange(h, device=x.device).view(1, 1, -1, 1).expand(b, self.num_heads, -1, w)
+        
+        # Apply offsets to grid
+        grid_x = (grid_x + offsets[..., 0]).clamp(0, w - 1)
+        grid_y = (grid_y + offsets[..., 1]).clamp(0, h - 1)
 
-        # Queries
-        q = self.to_q(x)
+        # Normalize grid to [-1, 1]
+        grid_x = 2.0 * grid_x / (w - 1) - 1.0
+        grid_y = 2.0 * grid_y / (h - 1) - 1.0
+        
+        grid = torch.stack((grid_x, grid_y), dim=-1)
 
-        # Calculate offsets
-        offsets = self.to_offsets(q)
+        # Sample values
+        sampled_v = F.grid_sample(v, grid, mode='bilinear', padding_mode='zeros', align_corners=True)
 
-        # Calculate grid + offsets
-        grid = create_grid_like(offsets)
-        vgrid = grid + offsets
-        vgrid_scaled = normalize_grid(vgrid)
+        # Compute attention scores
+        attn_weights = F.softmax(F.einsum('bchij,bchik->bhiij', q, k), dim=-1)
 
-        # Sample from the input using grid sampling
-        kv_feats = F.grid_sample(
-            x,
-            vgrid_scaled,
-            mode='bilinear', padding_mode='zeros', align_corners=False
-        )
-
-        # Derive key / values
-        k, v = self.to_k(kv_feats), self.to_v(kv_feats)
-
-        # Scale queries
-        q = q * self.scale
-
-        # Split out heads
-        q, k, v = map(lambda t: rearrange(t, 'b (h d) ... -> b h (...) d', h=self.heads), (q, k, v))
-
-        # Query / key similarity
-        sim = torch.einsum('b h i d, b h j d -> b h i j', q, k)
-
-        # Attention
-        attn = sim.softmax(dim=-1)
-        attn = self.dropout(attn)
-
-        # Aggregate and combine heads
-        out = torch.einsum('b h i j, b h j d -> b h i d', attn, v)
-        out = rearrange(out, 'b h (x y) d -> b (h d) x y', x=h, y=w)
-        out = self.to_out(out)
+        # Aggregate values using attention weights
+        out = torch.einsum('bhijk,bhij->bchij', sampled_v, attn_weights)
+        
+        # Pass through output convolution
+        out = self.output_conv(out)
 
         return out
 
 # Usage example:
-# model = LightweightDeformableAttention(dim=256)
-
+# model = DeformableAttention(in_channels=256, out_channels=256, num_heads=4)
 
 class PSA(nn.Module):
 
