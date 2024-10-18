@@ -53,7 +53,8 @@ from .block import (
     RepVGGDW,
     SEBlock,
     CoordAtt,
-    EMA
+    EMA,
+    DeformableAttention
 )
 from .conv import (
     CBAM,
@@ -153,5 +154,6 @@ __all__ = (
     "v10Detect",
     "CoordAtt",
     "EMA",
-    "ResNetBlock"
+    "ResNetBlock",
+    "DeformableAttention"
 )
