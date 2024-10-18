@@ -887,16 +887,16 @@ class DeformableAttention(nn.Module):
     def __init__(
         self,
         dim,
-        dim_head=64,
-        heads=8,
+        dim_head=16,
+        heads=4,
         dropout=0.,
-        downsample_factor=4,
+        downsample_factor=1,
         offset_scale=None,
         offset_groups=None,
-        offset_kernel_size=6,
+        offset_kernel_size=3,
         group_queries=True,
         group_key_values=True,
-        depth=2,
+        depth=1,
     ):
         super().__init__()
         offset_scale = default(offset_scale, downsample_factor)
