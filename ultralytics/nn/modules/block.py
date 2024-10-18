@@ -899,65 +899,61 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-
 class DeformableAttention(nn.Module):
-    def __init__(self, in_channels, out_channels, num_heads=4, offset_scale=1.0):
+    def __init__(self, in_channels, num_heads, offset_scale=1.0):
         super(DeformableAttention, self).__init__()
-        
+        self.in_channels = in_channels
         self.num_heads = num_heads
         self.offset_scale = offset_scale
-        
-        self.query_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.key_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.value_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        
-        # Offset layers
+
+        # Define the layers
+        self.query_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1)
         self.offset_conv = nn.Conv2d(in_channels, 2 * num_heads, kernel_size=3, padding=1)
-        
-        # Output convolution
-        self.output_conv = nn.Conv2d(out_channels, in_channels, kernel_size=1)
+        self.output_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1)
 
     def forward(self, x):
         b, c, h, w = x.size()
-        
-        # Compute query, key, value
-        q = self.query_conv(x)  # (b, out_channels, h, w)
-        k = self.key_conv(x)    # (b, out_channels, h, w)
-        v = self.value_conv(x)  # (b, out_channels, h, w)
-        
-        # Compute offsets
-        offsets = self.offset_conv(x)  # (b, 2 * num_heads, h, w)
-        offsets = offsets.view(b, self.num_heads, 2, h, w)  # (b, num_heads, 2, h, w)
-        
-        # Create the sampling grid
-        grid_x = torch.arange(w, device=x.device).view(1, 1, 1, -1).expand(b, self.num_heads, h, -1)
-        grid_y = torch.arange(h, device=x.device).view(1, 1, -1, 1).expand(b, self.num_heads, -1, w)
-        
-        # Apply offsets to grid
-        grid_x = (grid_x + offsets[..., 0] * self.offset_scale).clamp(0, w - 1)
-        grid_y = (grid_y + offsets[..., 1] * self.offset_scale).clamp(0, h - 1)
+
+        # Compute query, key, value, and offsets
+        q = self.query_conv(x).view(b, self.num_heads, c // self.num_heads, h, w)
+        k = self.key_conv(x).view(b, self.num_heads, c // self.num_heads, h, w)
+        v = self.value_conv(x).view(b, self.num_heads, c // self.num_heads, h, w)
+        offsets = self.offset_conv(x).view(b, self.num_heads, 2, h, w)
+
+        # Generate grid for sampling
+        grid_y, grid_x = torch.meshgrid(torch.arange(h), torch.arange(w))
+        grid_x = grid_x.to(x.device).float()
+        grid_y = grid_y.to(x.device).float()
+
+        # Apply offsets
+        grid_x = (grid_x + offsets[:, :, 0, :, :] * self.offset_scale).clamp(0, w - 1)
+        grid_y = (grid_y + offsets[:, :, 1, :, :] * self.offset_scale).clamp(0, h - 1)
 
         # Normalize grid to [-1, 1]
         grid_x = 2.0 * grid_x / (w - 1) - 1.0
         grid_y = 2.0 * grid_y / (h - 1) - 1.0
-        
-        # Combine the grids and create a 4D grid
+
+        # Stack grids for grid_sample
         grid = torch.stack((grid_x, grid_y), dim=-1)  # (b, num_heads, h, w, 2)
-        grid = grid.permute(0, 1, 3, 2)  # (b, num_heads, 2, h, w)
 
-        # Reshape to 4D for grid_sample
-        grid = grid.reshape(b * self.num_heads, 2, h, w)  # (b * num_heads, 2, h, w)
+        # Reshape for grid_sample
+        grid = grid.view(-1, h, w, 2)  # Reshape to (b * num_heads, h, w, 2)
 
-        # Sample values
+        # Sample values using grid_sample
+        v = v.view(-1, c // self.num_heads, h, w)  # Reshape to (b * num_heads, c // num_heads, h, w)
         sampled_v = F.grid_sample(v, grid, mode='bilinear', padding_mode='zeros', align_corners=True)
 
-        # Compute attention scores
-        attn_weights = F.softmax(F.einsum('bchij,bchik->bhiij', q, k), dim=-1)
+        # Reshape sampled values to (b, num_heads, c, h, w)
+        sampled_v = sampled_v.view(b, self.num_heads, c // self.num_heads, h, w)
 
-        # Aggregate values using attention weights
-        out = torch.einsum('bhijk,bhij->bchij', sampled_v, attn_weights)
-        
-        # Pass through output convolution
+        # Compute attention scores and apply them to sampled values
+        attn_weights = F.softmax(torch.einsum('bnchw,bnchw->bnhw', q, k), dim=-1)
+        out = torch.einsum('bnhw,bnchw->bnchw', attn_weights, sampled_v)
+
+        # Combine heads and pass through output convolution
+        out = out.contiguous().view(b, c, h, w)
         out = self.output_conv(out)
 
         return out
