@@ -899,23 +899,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-class DeformableAttention(nn.Module):
-    def __init__(self, in_channels, out_channels, num_heads=4, offset_scale=1.0, device='cuda'):
-        super(DeformableAttention, self).__init__()
 
+class DeformableAttention(nn.Module):
+    def __init__(self, in_channels, out_channels, num_heads=4, offset_scale=1.0):
+        super(DeformableAttention, self).__init__()
         
         self.num_heads = num_heads
         self.offset_scale = offset_scale
         
-        self.query_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1).to(device)
-        self.key_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1).to(device)
-        self.value_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1).to(device)
+        self.query_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
         
         # Offset layers
-        self.offset_conv = nn.Conv2d(in_channels, 2 * num_heads, kernel_size=3, padding=1).to(device)
+        self.offset_conv = nn.Conv2d(in_channels, 2 * num_heads, kernel_size=3, padding=1)
         
         # Output convolution
-        self.output_conv = nn.Conv2d(out_channels, in_channels, kernel_size=1).to(device)
+        self.output_conv = nn.Conv2d(out_channels, in_channels, kernel_size=1)
 
     def forward(self, x):
         b, c, h, w = x.size()
@@ -930,8 +930,8 @@ class DeformableAttention(nn.Module):
         offsets = offsets.view(b, self.num_heads, 2, h, w)  # (b, num_heads, 2, h, w)
         
         # Create the sampling grid
-        grid_x = torch.arange(w, device=self.device).view(1, 1, 1, -1).expand(b, self.num_heads, h, -1)
-        grid_y = torch.arange(h, device=self.device).view(1, 1, -1, 1).expand(b, self.num_heads, -1, w)
+        grid_x = torch.arange(w, device=x.device).view(1, 1, 1, -1).expand(b, self.num_heads, h, -1)
+        grid_y = torch.arange(h, device=x.device).view(1, 1, -1, 1).expand(b, self.num_heads, -1, w)
         
         # Apply offsets to grid
         grid_x = (grid_x + offsets[..., 0] * self.offset_scale).clamp(0, w - 1)
@@ -961,9 +961,6 @@ class DeformableAttention(nn.Module):
         out = self.output_conv(out)
 
         return out
-
-# Usage example:
-# Specify the device you want to use
 
 class PSA(nn.Module):
 
