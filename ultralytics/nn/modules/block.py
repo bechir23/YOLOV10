@@ -902,12 +902,10 @@ from einops import rearrange
 class DeformableAttention(nn.Module):
     def __init__(self, in_channels, out_channels, num_heads=4, offset_scale=1.0, device='cuda'):
         super(DeformableAttention, self).__init__()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         
         self.num_heads = num_heads
         self.offset_scale = offset_scale
-        self.device = device
         
         self.query_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1).to(device)
         self.key_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1).to(device)
