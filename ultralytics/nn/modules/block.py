@@ -899,7 +899,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-class DeformableAttention(nn.Module):
+"""class DeformableAttention(nn.Module):
     def __init__(self, in_channels, num_heads, offset_scale=1.0):
         super(DeformableAttention, self).__init__()
         self.in_channels = in_channels
@@ -943,6 +943,79 @@ class DeformableAttention(nn.Module):
 
         # Sample values using grid_sample
         v = v.view(-1, c // self.num_heads, h, w)  # Reshape to (b * num_heads, c // num_heads, h, w)
+        sampled_v = F.grid_sample(v, grid, mode='bilinear', padding_mode='zeros', align_corners=True)
+
+        # Reshape sampled values to (b, num_heads, c, h, w)
+        sampled_v = sampled_v.view(b, self.num_heads, c // self.num_heads, h, w)
+
+        # Compute attention scores and apply them to sampled values
+        attn_weights = F.softmax(torch.einsum('bnchw,bnchw->bnhw', q, k), dim=-1)
+        out = torch.einsum('bnhw,bnchw->bnchw', attn_weights, sampled_v)
+
+        # Combine heads and pass through output convolution
+        out = out.contiguous().view(b, c, h, w)
+        out = self.output_conv(out)
+
+        return out"""
+class DeformableAttention(nn.Module):
+    def __init__(self, in_channels, num_heads, offset_scale=1.0):
+        super(DeformableAttention, self).__init__()
+        self.in_channels = in_channels
+        self.num_heads = num_heads
+        self.offset_scale = offset_scale
+
+        # Define the layers
+        self.query_conv = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=1, groups=in_channels),  # Depthwise
+            nn.Conv2d(in_channels, in_channels, kernel_size=1)  # Pointwise
+        )
+        self.key_conv = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=1, groups=in_channels),  # Depthwise
+            nn.Conv2d(in_channels, in_channels, kernel_size=1)  # Pointwise
+        )
+        self.value_conv = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=1, groups=in_channels),  # Depthwise
+            nn.Conv2d(in_channels, in_channels, kernel_size=1)  # Pointwise
+        )
+        self.offset_conv = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1, groups=in_channels),  # Depthwise
+            nn.Conv2d(in_channels, 2 * num_heads, kernel_size=1)  # Pointwise
+        )
+        self.output_conv = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=1, groups=in_channels),  # Depthwise
+            nn.Conv2d(in_channels, in_channels, kernel_size=1)  # Pointwise
+        )
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+
+        # Compute query, key, value, and offsets
+        q = self.query_conv(x).view(b, self.num_heads, c // self.num_heads, h, w)
+        k = self.key_conv(x).view(b, self.num_heads, c // self.num_heads, h, w)
+        v = self.value_conv(x).view(b, self.num_heads, c // self.num_heads, h, w)
+        offsets = self.offset_conv(x).view(b, self.num_heads, 2, h, w)
+
+        # Generate grid for sampling
+        grid_y, grid_x = torch.meshgrid(torch.arange(h), torch.arange(w))
+        grid_x = grid_x.to(x.device).float()
+        grid_y = grid_y.to(x.device).float()
+
+        # Apply offsets
+        grid_x = (grid_x + offsets[:, :, 0, :, :] * self.offset_scale).clamp(0, w - 1)
+        grid_y = (grid_y + offsets[:, :, 1, :, :] * self.offset_scale).clamp(0, h - 1)
+
+        # Normalize grid to [-1, 1]
+        grid_x = 2.0 * grid_x / (w - 1) - 1.0
+        grid_y = 2.0 * grid_y / (h - 1) - 1.0
+
+        # Stack grids for grid_sample
+        grid = torch.stack((grid_x, grid_y), dim=-1)  # (b, num_heads, h, w, 2)
+
+        # Reshape for grid_sample
+        grid = grid.view(-1, h, w, 2)  # Reshape to (b * num_heads, h, w, 2)
+
+        # Sample values using grid_sample
+        v = v.view(-1, c // self.num_heads, h, w)  # Reshape to (b * num_heads, c // self.num_heads, h, w)
         sampled_v = F.grid_sample(v, grid, mode='bilinear', padding_mode='zeros', align_corners=True)
 
         # Reshape sampled values to (b, num_heads, c, h, w)
