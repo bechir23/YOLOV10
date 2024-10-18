@@ -846,7 +846,9 @@ class C2fCIB(C2f):
         x = (v @ attn.transpose(-2, -1)).view(B, C, H, W) + self.pe(v.reshape(B, C, H, W))
         x = self.proj(x)
         return x"""
-from torch import nn, einsum
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from einops import rearrange
 
 def exists(val):
@@ -854,9 +856,6 @@ def exists(val):
 
 def default(val, d):
     return val if exists(val) else d
-
-def divisible_by(numer, denom):
-    return (numer % denom) == 0
 
 def create_grid_like(t, dim=0):
     h, w, device = *t.shape[-2:], t.device
@@ -883,69 +882,65 @@ class Scale(nn.Module):
     def forward(self, x):
         return x * self.scale
 
-class DeformableAttention(nn.Module):
+class DepthwiseSeparableConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+        super().__init__()
+        self.depthwise = nn.Conv2d(in_channels, in_channels, kernel_size, stride=stride, padding=padding, groups=in_channels)
+        self.pointwise = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+
+    def forward(self, x):
+        return self.pointwise(self.depthwise(x))
+
+class LightweightDeformableAttention(nn.Module):
     def __init__(
         self,
         dim,
-        dim_head=16,
-        heads=4,
+        dim_head=16,  # Reduced head dimension
+        heads=4,  # Reduced number of heads
         dropout=0.,
         downsample_factor=1,
         offset_scale=None,
         offset_groups=None,
-        offset_kernel_size=3,
-        group_queries=True,
-        group_key_values=True,
-        depth=1,
+        offset_kernel_size=3,  # Reduced kernel size
+        depth=1,  # Reduced depth
     ):
         super().__init__()
         offset_scale = default(offset_scale, downsample_factor)
-        assert offset_kernel_size >= downsample_factor, 'offset kernel size must be greater than or equal to the downsample factor'
-        assert divisible_by(offset_kernel_size - downsample_factor, 2)
-
-        offset_groups = default(offset_groups, heads)
-        assert divisible_by(heads, offset_groups)
-
+        
         inner_dim = dim_head * heads
         self.scale = dim_head ** -0.5
         self.heads = heads
-        self.offset_groups = offset_groups
-
-        offset_dims = inner_dim // offset_groups
 
         self.downsample_factor = downsample_factor
 
         self.to_offsets = nn.Sequential(
-            nn.Conv2d(offset_dims, offset_dims, offset_kernel_size, groups=offset_dims, stride=downsample_factor, padding=(offset_kernel_size - downsample_factor) // 2),
+            DepthwiseSeparableConv(dim, dim, kernel_size=offset_kernel_size, stride=downsample_factor),
             nn.GELU(),
-            nn.Conv2d(offset_dims, 2, 1, bias=False),
+            nn.Conv2d(dim, 2, 1, bias=False),
             nn.Tanh(),
             Scale(offset_scale)
         )
 
-        self.mlp = nn.ModuleList([
-            nn.Sequential(nn.Linear(2, dim), nn.ReLU())
-        ])
-        for _ in range(depth - 1):
-            self.mlp.append(nn.Sequential(nn.Linear(dim, dim), nn.ReLU()))
-        self.mlp.append(nn.Linear(dim, heads // offset_groups))
+        self.mlp = nn.Sequential(
+            nn.Linear(2, dim),
+            nn.ReLU(),
+            nn.Linear(dim, heads)  # Final output reduced to heads
+        )
 
         self.dropout = nn.Dropout(dropout)
-        self.to_q = nn.Conv2d(dim, inner_dim, 1, groups=offset_groups if group_queries else 1, bias=False)
-        self.to_k = nn.Conv2d(dim, inner_dim, 1, groups=offset_groups if group_key_values else 1, bias=False)
-        self.to_v = nn.Conv2d(dim, inner_dim, 1, groups=offset_groups if group_key_values else 1, bias=False)
+        self.to_q = nn.Conv2d(dim, inner_dim, 1, bias=False)
+        self.to_k = nn.Conv2d(dim, inner_dim, 1, bias=False)
+        self.to_v = nn.Conv2d(dim, inner_dim, 1, bias=False)
         self.to_out = nn.Conv2d(inner_dim, dim, 1)
 
-    def forward(self, x, return_vgrid=False):
-        heads, b, h, w, downsample_factor, device = self.heads, x.shape[0], *x.shape[-2:], self.downsample_factor, x.device
+    def forward(self, x):
+        b, _, h, w = x.shape
 
         # Queries
         q = self.to_q(x)
 
         # Calculate offsets
-        group = lambda t: rearrange(t, 'b (g d) ... -> (b g) d ...', g=self.offset_groups)
-        grouped_queries = group(q)
-        offsets = self.to_offsets(grouped_queries)
+        offsets = self.to_offsets(q)
 
         # Calculate grid + offsets
         grid = create_grid_like(offsets)
@@ -954,11 +949,10 @@ class DeformableAttention(nn.Module):
 
         # Sample from the input using grid sampling
         kv_feats = F.grid_sample(
-            group(x),
+            x,
             vgrid_scaled,
             mode='bilinear', padding_mode='zeros', align_corners=False
         )
-        kv_feats = rearrange(kv_feats, '(b g) d ... -> b (g d) ...', b=b)
 
         # Derive key / values
         k, v = self.to_k(kv_feats), self.to_v(kv_feats)
@@ -967,140 +961,24 @@ class DeformableAttention(nn.Module):
         q = q * self.scale
 
         # Split out heads
-        q, k, v = map(lambda t: rearrange(t, 'b (h d) ... -> b h (...) d', h=heads), (q, k, v))
+        q, k, v = map(lambda t: rearrange(t, 'b (h d) ... -> b h (...) d', h=self.heads), (q, k, v))
 
         # Query / key similarity
-        sim = einsum('b h i d, b h j d -> b h i j', q, k)
-
-        # Relative positional bias
-        grid = create_grid_like(x)
-        grid_scaled = normalize_grid(grid, dim=0)
-        pos_bias = self.compute_rel_pos_bias(grid_scaled, vgrid_scaled)
-        sim = sim + pos_bias
-
-        # Numerical stability
-        sim = sim - sim.amax(dim=-1, keepdim=True).detach()
+        sim = torch.einsum('b h i d, b h j d -> b h i j', q, k)
 
         # Attention
         attn = sim.softmax(dim=-1)
         attn = self.dropout(attn)
 
         # Aggregate and combine heads
-        out = einsum('b h i j, b h j d -> b h i d', attn, v)
+        out = torch.einsum('b h i j, b h j d -> b h i d', attn, v)
         out = rearrange(out, 'b h (x y) d -> b (h d) x y', x=h, y=w)
         out = self.to_out(out)
 
-        if return_vgrid:
-            return out, vgrid
-
         return out
 
-    def compute_rel_pos_bias(self, grid_q, grid_kv):
-        device, dtype = grid_q.device, grid_kv.dtype
-
-        grid_q = rearrange(grid_q, 'h w c -> 1 (h w) c')
-        grid_kv = rearrange(grid_kv, 'b h w c -> b (h w) c')
-
-        pos = rearrange(grid_q, 'b i c -> b i 1 c') - rearrange(grid_kv, 'b j c -> b 1 j c')
-        bias = torch.sign(pos) * torch.log(pos.abs() + 1)  # log of distance is sign(rel_pos) * log(abs(rel_pos) + 1)
-
-        for layer in self.mlp:
-            bias = layer(bias)
-
-        bias = rearrange(bias, '(b g) i j o -> b (g o) i j', g=self.offset_groups)
-        return bias
-
-class Attention(nn.Module):
-    def __init__(self, dim, num_heads=8, attn_ratio=0.5, image_size=(32, 32)):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim = dim // num_heads
-        self.key_dim = int(self.head_dim * attn_ratio)
-        self.scale = self.key_dim ** -0.5
-        nh_kd = self.key_dim * num_heads
-        h = dim + nh_kd * 2
-        
-        # Learnable positional encoding for height and width
-        self.pos_embed_h = nn.Parameter(torch.zeros(1, num_heads, image_size[0], self.key_dim))
-        self.pos_embed_w = nn.Parameter(torch.zeros(1, num_heads, image_size[1], self.key_dim))
-        
-        self.qkv = Conv(dim, h, 1, act=False)
-        self.proj = Conv(dim, dim, 1, act=False)
-        self.pe = Conv(dim, dim, 3, 1, g=dim, act=False)
-        
-        # Initialize positional encodings with sin/cos functions (optional)
-        self.init_positional_encoding(image_size)
-
-    def init_positional_encoding(self, image_size):
-     h, w = image_size
-     position_h = torch.arange(h, dtype=torch.float).unsqueeze(1)
-     position_w = torch.arange(w, dtype=torch.float).unsqueeze(1)
-    
-     div_term = torch.exp(torch.arange(0, self.key_dim, 2).float() * -(math.log(10000.0) / self.key_dim))
-
-    # Positional encoding for height
-     pos_h = torch.zeros(h, self.key_dim)
-     pos_h[:, 0::2] = torch.sin(position_h * div_term)
-     pos_h[:, 1::2] = torch.cos(position_h * div_term)
-
-    # Positional encoding for width
-     pos_w = torch.zeros(w, self.key_dim)
-     pos_w[:, 0::2] = torch.sin(position_w * div_term)
-     pos_w[:, 1::2] = torch.cos(position_w * div_term)
-
-    # Expand dimensions for batch and head dimensions
-     pos_h = pos_h.unsqueeze(0).unsqueeze(0)  # Shape [1, 1, H, key_dim]
-     pos_w = pos_w.unsqueeze(0).unsqueeze(0)  # Shape [1, 1, W, key_dim]
-
-    # Register these as buffers
-     self.register_buffer('pos_h', pos_h)
-     self.register_buffer('pos_w', pos_w)
-
-    def forward(self, x):
-      B, C, H, W = x.shape
-      N = H * W
-    
-    # Apply qkv projection
-      qkv = self.qkv(x)
-      q, k, v = qkv.view(B, self.num_heads, self.key_dim*2 + self.head_dim, N).split([self.key_dim, self.key_dim, self.head_dim], dim=2)
-    
-    # Reshape queries and keys back to (B, heads, H, W, dim) for position addition
-      q = q.view(B, self.num_heads, H, W, self.key_dim)
-      k = k.view(B, self.num_heads, H, W, self.key_dim)
-   
-    # Make sure positional encoding has appropriate dimensions
-      pos_h = self.pos_h[:, :, :H, :].unsqueeze(3)  # Shape [1, heads, H, 1, key_dim]
-      pos_w = self.pos_w[:, :, :W, :].unsqueeze(2)  # Shape [1, heads, 1, W, key_dim]
-
-    # Add positional encoding to query and key
-      q = q + pos_h + pos_w
-      k = k + pos_h + pos_w
-
-    # Flatten q and k for attention calculation
-
-      q = q.view(B, self.num_heads, N, self.key_dim)
-      k = k.view(B, self.num_heads, N, self.key_dim)
-
-    # Compute attention scores and continue forward
-      attn = (q @ k.transpose(-2, -1)) * self.scale  # attn shape [B, num_heads, H*W, H*W]
-      attn = attn.softmax(dim=-1)
-   
-
-# v has shape [B, num_heads, H*W, head_dim]
-      v = v.view(B, self.num_heads, H * W , self.head_dim)
-
-# Now, apply attention to v
-      x = (attn @ v)  # Output shape will be [B, num_heads, H*W, head_dim]
-
-# Reshape x to [B, C, H, W] where C = num_heads * head_dim
-      x = x.permute(0, 1, 3, 2).reshape(B, -1, H, W)  # Shape [B, C, H, W]
-
-# Add positional encoding (assuming self.pe outputs shape [B, C, H, W])
-      x = x + self.pe(v.reshape(B, -1, H, W))  # Make sure self.pe output matches x shape
-
-# Project the output back to original dimension
-      x = self.proj(x)  # Shape [B, C_out, H, W]
-      return x
+# Usage example:
+# model = LightweightDeformableAttention(dim=256)
 
 
 class PSA(nn.Module):
