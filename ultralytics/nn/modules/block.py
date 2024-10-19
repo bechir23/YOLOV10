@@ -1095,12 +1095,55 @@ class SEBlock(nn.Module):
         y = self.sigmoid(y)
       #  print('shape y in seblock', (x*y.expand_as(x)).shape)
         return x * y.expand_as(x)
- 
+
 class CoordAtt(nn.Module):
     def __init__(self, in_channels, reduction=32):
         super(CoordAtt, self).__init__()
-        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))  # Average pool along the height
-        self.pool_w = nn.AdaptiveAvgPool2d((1, None))  # Average pool along the width
+        mip = max(8, in_channels // reduction)
+
+        # Convolution layers
+        self.conv1 = nn.Conv2d(in_channels, mip, kernel_size=1, stride=1)
+        self.conv2 = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1)
+        self.conv3 = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1)
+
+    def coord_act(self, x):
+        return x * (F.relu6(x + 3) / 6)
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+
+        # Pooling along height and width
+        x_h = F.avg_pool2d(x, (h, 1), stride=1)  # Pool over height
+        x_w = F.avg_pool2d(x, (1, w), stride=1)  # Pool over width
+        x_w = x_w.permute(0, 1, 3, 2)  # Transpose width and height
+
+        # Concatenation of x_h and x_w
+        y = torch.cat([x_h, x_w], dim=2)
+
+        # First convolution
+        y = self.conv1(y)
+        y = self.coord_act(y)
+
+        # Split into x_h and x_w
+        x_h, x_w = torch.split(y, [h, w], dim=2)
+
+        # Transpose x_w back to original shape
+        x_w = x_w.permute(0, 1, 3, 2)
+
+        # Second and third convolutions with sigmoid activations
+        a_h = torch.sigmoid(self.conv2(x_h))
+        a_w = torch.sigmoid(self.conv3(x_w))
+
+        # Output
+        out = x * a_h * a_w
+
+        return out
+ 
+"""class CoordAtt(nn.Module):
+    def __init__(self, in_channels, reduction=32):
+        super(CoordAtt, self).__init__()
+        self.pool_h = nn.AdaptiveAvgPool2d((None, None))  # Average pool along the height
+        self.pool_w = nn.AdaptiveAvgPool2d((None, None))  # Average pool along the width
 
         mip = max(8, in_channels // reduction)
         self.conv1 = nn.Conv2d(in_channels, mip, kernel_size=1, stride=1, padding=0)
@@ -1123,6 +1166,7 @@ class CoordAtt(nn.Module):
         # Apply pooling along the height and width axes
         x_h = self.pool_h(x)  # (b, c, h, 1)
         x_w = self.pool_w(x).permute(0, 1, 3, 2)  # (b, c, 1, w) and then transpose
+   
 
         # Concatenate and pass through the first convolution
         y = torch.cat([x_h, x_w], dim=2)  # Concatenate along the height axis
@@ -1141,20 +1185,9 @@ class CoordAtt(nn.Module):
         # Apply the attention maps
         out = x * a_h * a_w
 
-        # Query, Key, Value for Coordinate Attention
-        query = self.query_conv(out)
-        key = self.key_conv(out)
-        value = self.value_conv(out)
+     
 
-        # Compute attention scores
-        attention_scores = torch.matmul(query.view(b, -1, h * w).permute(0, 2, 1), key.view(b, -1, h * w))
-        attention_scores = F.softmax(attention_scores, dim=-1)
-
-        # Apply attention scores to value
-        out = torch.matmul(attention_scores, value.view(b, -1, h * w).permute(0, 2, 1))
-        out = out.view(b, c, h, w)
-
-        return out
+        return out"""
 
 
 """
