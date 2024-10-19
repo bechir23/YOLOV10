@@ -1113,8 +1113,9 @@ class CoordAtt(nn.Module):
         b, c, h, w = x.size()
 
         # Pooling along height and width
-        x_h = F.avg_pool2d(x, (h, 1), stride=1)  # Pool over height
-        x_w = F.avg_pool2d(x, (1, w), stride=1)  # Pool over width
+        x_h = nn.AdaptiveAvgPool2d((h, 1)), stride=1)  # Pool over height
+        x_h = nn.AdaptiveAvgPool2d((1, w)), stride=1)  # Pool over height
+
         x_w = x_w.permute(0, 1, 3, 2)  # Transpose width and height
 
         # Concatenation of x_h and x_w
@@ -1142,8 +1143,8 @@ class CoordAtt(nn.Module):
 """class CoordAtt(nn.Module):
     def __init__(self, in_channels, reduction=32):
         super(CoordAtt, self).__init__()
-        self.pool_h = nn.AdaptiveAvgPool2d((None, None))  # Average pool along the height
-        self.pool_w = nn.AdaptiveAvgPool2d((None, None))  # Average pool along the width
+        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))  # Average pool along the height
+        self.pool_w = nn.AdaptiveAvgPool2d((1, None))  # Average pool along the width
 
         mip = max(8, in_channels // reduction)
         self.conv1 = nn.Conv2d(in_channels, mip, kernel_size=1, stride=1, padding=0)
