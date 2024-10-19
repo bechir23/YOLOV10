@@ -957,9 +957,13 @@ from einops import rearrange
         out = self.output_conv(out)
 
         return out"""
-class DeformableAttention(nn.Module):
-    def __init__(self, in_channels, num_heads, offset_scale=1.0):
-        super(DeformableAttention, self).__init__()
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class DeformableAttentionWithPE(nn.Module):
+    def __init__(self, in_channels, num_heads=4, offset_scale=1.0):
+        super(DeformableAttentionWithPE, self).__init__()
         self.in_channels = in_channels
         self.num_heads = num_heads
         self.offset_scale = offset_scale
@@ -986,8 +990,14 @@ class DeformableAttention(nn.Module):
             nn.Conv2d(in_channels, in_channels, kernel_size=1)  # Pointwise
         )
 
+        # Position encoding
+        self.position_encoding = nn.Parameter(torch.randn(1, in_channels, 1, 1))
+
     def forward(self, x):
         b, c, h, w = x.size()
+
+        # Add position encoding
+        x = x + self.position_encoding
 
         # Compute query, key, value, and offsets
         q = self.query_conv(x).view(b, self.num_heads, c // self.num_heads, h, w)
@@ -996,7 +1006,7 @@ class DeformableAttention(nn.Module):
         offsets = self.offset_conv(x).view(b, self.num_heads, 2, h, w)
 
         # Generate grid for sampling
-        grid_y, grid_x = torch.meshgrid(torch.arange(h), torch.arange(w))
+        grid_y, grid_x = torch.meshgrid(torch.arange(h), torch.arange(w), indexing='ij')
         grid_x = grid_x.to(x.device).float()
         grid_y = grid_y.to(x.device).float()
 
@@ -1030,6 +1040,8 @@ class DeformableAttention(nn.Module):
         out = self.output_conv(out)
 
         return out
+
+
 
 class PSA(nn.Module):
 
