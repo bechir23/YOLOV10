@@ -65,4 +65,4 @@ head:
   - [-1, 1, SEBlock, [512]] # Applying EMA to emphasize prominent features at P4
 
   # Detection layer to output results for each level (P3, P4, P5)
-  - [[30, 34, 38], 1, v10Detect, [nc]] # Detect at different scales (P3, P4, P5)
+  - [[31, 36, 40], 1, v10Detect, [nc]] # Detect at different scales (P3, P4, P5)
