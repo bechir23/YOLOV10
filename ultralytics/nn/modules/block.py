@@ -1101,16 +1101,20 @@ class CoordAtt(nn.Module):
         super(CoordAtt, self).__init__()
         self.pool_h = nn.AdaptiveAvgPool2d((None, 1))  # Average pool along the height
         self.pool_w = nn.AdaptiveAvgPool2d((1, None))  # Average pool along the width
-        
-        
+
         mip = max(8, in_channels // reduction)
-        self.bn1 = nn.BatchNorm2d(mip)
-        
         self.conv1 = nn.Conv2d(in_channels, mip, kernel_size=1, stride=1, padding=0)
-        self.conv3x3 = nn.Conv2d(mip, mip, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(mip)
+        self.relu = nn.ReLU(inplace=True)
+
         self.conv2_h = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
         self.conv2_w = nn.Conv2d(mip, in_channels, kernel_size=1, stride=1, padding=0)
-        #self.relu = nn.LeakyReLU()
+
+        # Query, Key, Value for Coordinate Attention
+        self.query_conv = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1)
+
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -1124,8 +1128,8 @@ class CoordAtt(nn.Module):
         y = torch.cat([x_h, x_w], dim=2)  # Concatenate along the height axis
         y = self.conv1(y)  # (b, mip, h + w, 1)
         y = self.bn1(y)
-   #     y = self.conv3x3(y)
-        
+        y = self.relu(y)
+
         # Split back into height and width features
         x_h, x_w = torch.split(y, [h, w], dim=2)
         x_w = x_w.permute(0, 1, 3, 2)  # Transpose width features back to original shape
@@ -1136,6 +1140,19 @@ class CoordAtt(nn.Module):
 
         # Apply the attention maps
         out = x * a_h * a_w
+
+        # Query, Key, Value for Coordinate Attention
+        query = self.query_conv(out)
+        key = self.key_conv(out)
+        value = self.value_conv(out)
+
+        # Compute attention scores
+        attention_scores = torch.matmul(query.view(b, -1, h * w).permute(0, 2, 1), key.view(b, -1, h * w))
+        attention_scores = F.softmax(attention_scores, dim=-1)
+
+        # Apply attention scores to value
+        out = torch.matmul(attention_scores, value.view(b, -1, h * w).permute(0, 2, 1))
+        out = out.view(b, c, h, w)
 
         return out
 
