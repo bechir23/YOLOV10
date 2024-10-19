@@ -961,9 +961,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class DeformableAttentionWithPE(nn.Module):
+class DeformableAttention(nn.Module):
     def __init__(self, in_channels, num_heads=4, offset_scale=1.0):
-        super(DeformableAttentionWithPE, self).__init__()
+        super(DeformableAttention, self).__init__()
         self.in_channels = in_channels
         self.num_heads = num_heads
         self.offset_scale = offset_scale
