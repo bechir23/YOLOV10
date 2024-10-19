@@ -1114,7 +1114,7 @@ class CoordAtt(nn.Module):
 
         # Pooling along height and width
         x_h = nn.AdaptiveAvgPool2d((h,1))  # Pool over height
-        x_h = nn.AdaptiveAvgPool2d((1, w))  # Pool over height
+        x_w = nn.AdaptiveAvgPool2d((1, w))  # Pool over height
 
         x_w = x_w.permute(0, 1, 3, 2)  # Transpose width and height
 
