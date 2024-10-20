@@ -48,7 +48,7 @@ head:
 #  - [-1, 1, ECAAttention, [256]] # Applying SEBlock for fine-grained channel-wise recalibration at P3
   - [-1, 1, CoordAtt, [256]] 
 
-  -# [[10, 6], 1, Concat, [1]] # Concatenate backbone P3 features
+  #- [[10, 6], 1, Concat, [1]] # Concatenate backbone P3 features
   #- [-1, 3, C2f, [256]] # Feature extraction using C3Ghost at P3 level (P3/8-small)
   #- [-1, 1, CoordAtt, [128]] 
 
