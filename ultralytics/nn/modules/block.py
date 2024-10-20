@@ -819,7 +819,7 @@ class C2fCIB(C2f):
         self.m = nn.ModuleList(CIB(self.c, self.c, shortcut, e=1.0, lk=lk) for _ in range(n))
 
 
-"""class Attention(nn.Module):
+class Attention(nn.Module):
     def __init__(self, dim, num_heads=8,
                  attn_ratio=0.5):
         super().__init__()
@@ -845,7 +845,7 @@ class C2fCIB(C2f):
         attn = attn.softmax(dim=-1)
         x = (v @ attn.transpose(-2, -1)).view(B, C, H, W) + self.pe(v.reshape(B, C, H, W))
         x = self.proj(x)
-        return x"""
+        return x
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
