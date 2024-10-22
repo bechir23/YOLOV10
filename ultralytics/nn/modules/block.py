@@ -1118,7 +1118,7 @@ class CoordAtt(nn.Module):
         x_h = self.pool_h(x)  # Pool over height
         x_w = self.pool_w(x)  # Pool over height
 
-        x_w = x_w.permute(0, 1, 3, 2)  # Transpose width and height
+        x_h = x_h.permute(0, 1, 3, 2)  # Transpose width and height
     
         # Concatenation of x_h and x_w
         y = torch.cat([x_h, x_w], dim=2)
@@ -1133,7 +1133,7 @@ class CoordAtt(nn.Module):
         x_h, x_w = torch.split(y, [h, w], dim=2)
 
         # Transpose x_w back to original shape
-        x_w = x_w.permute(0, 1, 3, 2)
+        x_h = x_h.permute(0, 1, 3, 2)
 
         # Second and third convolutions with sigmoid activations
         a_h = torch.sigmoid(self.conv2(x_h))
