@@ -1121,7 +1121,7 @@ class CoordAtt(nn.Module):
         x_h = x_h.permute(0, 1, 3, 2)  # Transpose width and height
     
         # Concatenation of x_h and x_w
-        y = torch.cat([x_h, x_w], dim=2)
+        y = torch.cat([x_h, x_w], dim=3)
 
         # First convolution
         y = self.conv1(y)
@@ -1130,7 +1130,7 @@ class CoordAtt(nn.Module):
 
 
         # Split into x_h and x_w
-        x_h, x_w = torch.split(y, [h, w], dim=2)
+        x_h, x_w = torch.split(y, [h, w], dim=3)
 
         # Transpose x_w back to original shape
         x_h = x_h.permute(0, 1, 3, 2)
