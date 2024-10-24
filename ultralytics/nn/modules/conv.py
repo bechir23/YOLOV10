@@ -149,20 +149,34 @@ class Focus(nn.Module):
         # return self.conv(self.contract(x))
 """
 
-
 class Focus(nn.Module):
     """Focus layer to reduce the spatial dimensions and enhance feature extraction."""
-
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+    
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, upscale=False):
         super(Focus, self).__init__()
+        self.upscale = upscale
         self.conv = nn.Conv2d(in_channels * 4, out_channels, kernel_size, stride, padding)
         self.bn = nn.BatchNorm2d(out_channels)
         self.act = nn.SiLU()  # Activation function
 
     def forward(self, x):
         # Slice the input tensor and concatenate along the channel dimension
-        x = torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], dim=1)
-        return self.act(self.bn(self.conv(x)))
+        x = torch.cat([
+            x[..., ::2, ::2],   # Top left
+            x[..., 1::2, ::2],  # Bottom left
+            x[..., ::2, 1::2],  # Top right
+            x[..., 1::2, 1::2]   # Bottom right
+        ], dim=1)
+
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.act(x)
+
+        if self.upscale:
+            # Upsample the output to match the original resolution using bicubic interpolation
+            x = F.interpolate(x, size=(640, 640), mode='bicubic', align_corners=False)
+        
+        return x
 
 class GhostConv(nn.Module):
     """Ghost Convolution https://github.com/huawei-noah/ghostnet."""
