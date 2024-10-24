@@ -1263,7 +1263,7 @@ class EMA(nn.Module):
        # x_h = self.pool_h(group_x)
         x_h = self.pool_h(group_x).permute(0, 1, 3, 2)
         x_w = self.pool_w(group_x)
-        hw = self.conv1x1(torch.cat([x_h, x_w], dim=3)
+        hw = self.conv1x1(torch.cat([x_h, x_w], dim=3))
         hw= coord_act(hw)
         x_h, x_w = torch.split(hw, [h, w], dim=3)
         x1 = self.gn(group_x * x_h.permute(0, 1, 3, 2).sigmoid() * x_w.sigmoid())
