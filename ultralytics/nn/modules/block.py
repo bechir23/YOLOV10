@@ -1153,7 +1153,7 @@ class CoordAtt(nn.Module):
 
 
         # Output
-        out = 2* x * a_h * a_w + x *az_h * az_w
+        out = 0.8* x * a_h * a_w + 0.2* x *az_h * az_w
 
         return out
  
