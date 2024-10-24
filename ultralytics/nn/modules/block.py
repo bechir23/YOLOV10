@@ -1117,44 +1117,43 @@ class CoordAtt(nn.Module):
         # Pooling along height and width
         x_h = self.pool_h(x)  # Pool over height
         x_w = self.pool_w(x)  # Pool over height
-     #   z_h=x_h
-      #  z_w = x_w.permute(0, 1, 3, 2)  # Transpose width and height
+        z_h=x_h
+        z_w = x_w.permute(0, 1, 3, 2)  # Transpose width and height
 
         x_h = x_h.permute(0, 1, 3, 2)  # Transpose width and height
     
         # Concatenation of x_h and x_w
         y = torch.cat([x_h, x_w], dim=3)
-     #   z = torch.cat([z_h, z_w], dim=2)
+        z = torch.cat([z_h, z_w], dim=2)
 
         # First convolution
         y = self.conv1(y)
-   #     z= self.conv1(z)
+        z= self.conv1(z)
         y = self.coord_act(y)
-   #     z= self.coord_act(z)
+        z= self.coord_act(z)
        
 
 
         # Split into x_h and x_w
         x_h, x_w = torch.split(y, [h, w], dim=3)
-   #     z_h, z_w = torch.split(z, [h, w], dim=2)
+        z_h, z_w = torch.split(z, [h, w], dim=2)
 
 
         # Transpose x_w back to original shape
         x_h = x_h.permute(0, 1, 3, 2)
-     #   z_w = x_w.permute(0, 1, 3, 2)
+        z_w = x_w.permute(0, 1, 3, 2)
 
         # Second and third convolutions with sigmoid activations
         a_h = torch.sigmoid(self.conv2(x_h))
         a_w = torch.sigmoid(self.conv3(x_w))
 
-      #  az_h = torch.sigmoid(self.conv2(z_h))
-     #   az_w = torch.sigmoid(self.conv3(z_w))
+        az_h = torch.sigmoid(self.conv2(z_h))
+        az_w = torch.sigmoid(self.conv3(z_w))
 
 
 
         # Output
-        out = x * a_h * a_w
-        # + 2*x*az_h*az_w
+        out = x * a_h * a_w + 2*x*az_h*az_w
 
         return out
  
