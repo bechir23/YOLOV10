@@ -152,7 +152,7 @@ class Focus(nn.Module):
 class Focus(nn.Module):
     """Focus layer to reduce the spatial dimensions and enhance feature extraction."""
     
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, upscale=False):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, upscale=True):
         super(Focus, self).__init__()
         self.upscale = upscale
         self.conv = nn.Conv2d(in_channels * 4, out_channels, kernel_size, stride, padding)
