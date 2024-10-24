@@ -1142,7 +1142,7 @@ class CoordAtt(nn.Module):
 
         # Transpose x_w back to original shape
      #   x_h = x_h.permute(0, 1, 3, 2)
-        z_w = x_w.permute(0, 1, 3, 2)
+        z_w = z_w.permute(0, 1, 3, 2)
 
         # Second and third convolutions with sigmoid activations
     #    a_h = torch.sigmoid(self.conv2(x_h))
