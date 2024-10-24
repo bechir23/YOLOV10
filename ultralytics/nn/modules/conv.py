@@ -161,6 +161,7 @@ class Focus(nn.Module):
 
     def forward(self, x):
         # Slice the input tensor and concatenate along the channel dimension
+        identity = x 
         x = torch.cat([
             x[..., ::2, ::2],   # Top left
             x[..., 1::2, ::2],  # Bottom left
@@ -176,7 +177,7 @@ class Focus(nn.Module):
             # Upsample the output to match the original resolution using bicubic interpolation
             x = F.interpolate(x, size=(640, 640), mode='bicubic', align_corners=False)
         
-        return x
+        return identity + x
 
 class GhostConv(nn.Module):
     """Ghost Convolution https://github.com/huawei-noah/ghostnet."""
