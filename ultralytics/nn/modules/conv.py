@@ -177,7 +177,7 @@ class Focus(nn.Module):
             # Upsample the output to match the original resolution using bicubic interpolation
             x = F.interpolate(x, size=(640, 640), mode='bicubic', align_corners=False)
         
-        return identity + x
+        return torch.cat(identity,x , dim=3)
 
 class GhostConv(nn.Module):
     """Ghost Convolution https://github.com/huawei-noah/ghostnet."""
