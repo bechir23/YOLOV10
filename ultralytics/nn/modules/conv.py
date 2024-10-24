@@ -162,7 +162,6 @@ class Focus(nn.Module):
     def forward(self, x):
         # Slice the input tensor and concatenate along the channel dimension
         identity = x 
-        print(identity.shape)
         
         x=torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))
         x = F.interpolate(x, size=(identity.size(2),identity.size(3)), mode='bicubic', align_corners=False)
