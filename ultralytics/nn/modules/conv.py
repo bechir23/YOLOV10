@@ -155,7 +155,7 @@ class Focus(nn.Module):
     
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, g=1, act=True):
         super().__init__()
-        self.conv = Conv(in_channels * 4, out_channels, kernel_size, stride, padding ,act=act)
+        self.conv = Conv(in_channels * 5, out_channels, kernel_size, stride, padding ,act=act)
         self.bn = nn.BatchNorm2d(out_channels)
         self.act = nn.SiLU()  # Activation function
 
@@ -164,22 +164,12 @@ class Focus(nn.Module):
         identity = x 
         print(identity.shape)
         
-        x = torch.cat([
-            x[..., ::2, ::2],   # Top left
-            x[..., 1::2, ::2],  # Bottom left
-            x[..., ::2, 1::2],  # Top right
-            x[..., 1::2, 1::2]   # Bottom right
-        ], dim=1)
-
-        x = self.conv(x)
+        x=torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))
+        x = F.interpolate(x, size=(identity.size(2),identity.size(3)), mode='bicubic', align_corners=False)
+        x = self.conv(torch.cat((identity, x), dim=1))
         x = self.bn(x)
         x = self.act(x)
-        print(x.shape)
-
-            # Upsample the output to match the original resolution using bicubic interpolation
-        x = F.interpolate(x, size=(identity.size(2),identity.size(3)), mode='bicubic', align_corners=False)
-        
-        return self.conv(torch.cat((identity, x), dim=1))
+        return x
 
 class GhostConv(nn.Module):
     """Ghost Convolution https://github.com/huawei-noah/ghostnet."""
