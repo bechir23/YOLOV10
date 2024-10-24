@@ -1119,7 +1119,7 @@ class CoordAtt(nn.Module):
       #  x_w = self.pool_w(x)  # Pool over height
         z_h= self.pool_h(x)
         z_w = self.pool_w(x)
-        z_w = x_w.permute(0, 1, 3, 2)  # Transpose width and height
+        z_w = z_w.permute(0, 1, 3, 2)  # Transpose width and height
 
        # x_h = x_h.permute(0, 1, 3, 2)  # Transpose width and height
     
