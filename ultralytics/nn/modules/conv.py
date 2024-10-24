@@ -153,7 +153,7 @@ import torch.nn.functional as F
 class Focus(nn.Module):
     """Focus layer to reduce the spatial dimensions and enhance feature extraction."""
     
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, act=True):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, g=1, act=True):
         super().__init__()
         self.conv = nn.Conv2d(in_channels * 5, out_channels, kernel_size, stride, padding ,act=act)
         self.bn = nn.BatchNorm2d(out_channels)
