@@ -175,7 +175,7 @@ class Focus(nn.Module):
 
         if self.upscale:
             # Upsample the output to match the original resolution using bicubic interpolation
-            x = F.interpolate(x, size=(640, 640), mode='bicubic', align_corners=False)
+            x = F.interpolate(x, size=(identity.size(2),identity.size(3)), mode='bicubic', align_corners=False)
         
         return torch.cat((identity, x), dim=1)
 
