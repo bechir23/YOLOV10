@@ -148,6 +148,7 @@ class Focus(nn.Module):
         return self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))
         # return self.conv(self.contract(x))
 """
+import torch.nn.functional as F
 
 class Focus(nn.Module):
     """Focus layer to reduce the spatial dimensions and enhance feature extraction."""
