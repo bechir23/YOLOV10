@@ -153,10 +153,9 @@ import torch.nn.functional as F
 class Focus(nn.Module):
     """Focus layer to reduce the spatial dimensions and enhance feature extraction."""
     
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, upscale=True):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, act=True):
         super(Focus, self).__init__()
-        self.upscale = upscale
-        self.conv = nn.Conv2d(in_channels * 4, out_channels, kernel_size, stride, padding)
+        self.conv = nn.Conv2d(in_channels * 5, out_channels, kernel_size, stride, padding ,act=act)
         self.bn = nn.BatchNorm2d(out_channels)
         self.act = nn.SiLU()  # Activation function
 
@@ -174,11 +173,10 @@ class Focus(nn.Module):
         x = self.bn(x)
         x = self.act(x)
 
-        if self.upscale:
             # Upsample the output to match the original resolution using bicubic interpolation
-            x = F.interpolate(x, size=(identity.size(2),identity.size(3)), mode='bicubic', align_corners=False)
+        x = F.interpolate(x, size=(identity.size(2),identity.size(3)), mode='bicubic', align_corners=False)
         
-        return torch.cat((identity, x), dim=1)
+        return self.conv(torch.cat((identity, x), dim=1))
 
 class GhostConv(nn.Module):
     """Ghost Convolution https://github.com/huawei-noah/ghostnet."""
