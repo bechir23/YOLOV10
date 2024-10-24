@@ -135,25 +135,34 @@ class ConvTranspose(nn.Module):
         """Applies activation and convolution transpose operation to input."""
         return self.act(self.conv_transpose(x))
 
-
+"""
 class Focus(nn.Module):
-    """Focus wh information into c-space."""
 
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):
-        """Initializes Focus object with user defined channel, convolution, padding, group and activation values."""
         super().__init__()
         self.conv = Conv(c1 * 4, c2, k, s, p, g, act=act)
         # self.contract = Contract(gain=2)
 
     def forward(self, x):
-        """
-        Applies convolution to concatenated tensor and returns the output.
-
-        Input shape is (b,c,w,h) and output shape is (b,4c,w/2,h/2).
-        """
+     
         return self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))
         # return self.conv(self.contract(x))
+"""
 
+
+class Focus(nn.Module):
+    """Focus layer to reduce the spatial dimensions and enhance feature extraction."""
+
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+        super(Focus, self).__init__()
+        self.conv = nn.Conv2d(in_channels * 4, out_channels, kernel_size, stride, padding)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.act = nn.SiLU()  # Activation function
+
+    def forward(self, x):
+        # Slice the input tensor and concatenate along the channel dimension
+        x = torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], dim=1)
+        return self.act(self.bn(self.conv(x)))
 
 class GhostConv(nn.Module):
     """Ghost Convolution https://github.com/huawei-noah/ghostnet."""
