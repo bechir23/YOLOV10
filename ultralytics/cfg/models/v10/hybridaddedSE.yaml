@@ -32,7 +32,7 @@ backbone:
   
 head:
   # Applying SEBlock after C3Ghost for refining fine-grained features
-  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # Upsampling from P5 to P4
+  - [-2, 1, nn.Upsample, [None, 2, "nearest"]] # Upsampling from P5 to P4
   - [[-1, 10], 1, Concat, [1]] # Concatenate backbone P4 features
   - [-1, 1, C2f, [512]] # Applying SEBlock for fine-grained channel-wise recalibration at P4
   - [-1, 1, EMA, [256]] 
@@ -53,4 +53,4 @@ head:
   - [-1, 1, EMA, [512]] # Applying EMA to emphasize prominent features at P4
 
   # Detection layer to output results for each level (P3, P4, P5)
-  - [[18,22, 26, 30], 1, v10Detect, [nc]] # Detect at different scales (P3, P4, P5)
+  - [[22, 26, 30], 1, v10Detect, [nc]] # Detect at different scales (P3, P4, P5)
