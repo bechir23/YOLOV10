@@ -168,9 +168,9 @@ class Focus(nn.Module):
             x[..., ::2, 1::2],  # Top-right
             x[..., 1::2, 1::2]  # Bottom-right
         ], dim=1)
-       # x = self.conv(x)
-      #  x = self.bn(x)
-     #   x = self.act(x)
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.act(x)
         return x
 
 class GhostConv(nn.Module):
