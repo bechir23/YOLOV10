@@ -136,7 +136,7 @@ class ConvTranspose(nn.Module):
         return self.act(self.conv_transpose(x))
 
 
-class Focus(nn.Module):
+"""class Focus(nn.Module):
 
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):
         super().__init__()
@@ -150,16 +150,16 @@ class Focus(nn.Module):
     def forward(self, x):
      
         return self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))
-        # return self.conv(self.contract(x))
+        # return self.conv(self.contract(x))"""
 
 import torch.nn.functional as F
-"""class Focus(nn.Module):
+class Focus(nn.Module):
 
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, act=True):
         super(Focus, self).__init__()
-        self.conv = Conv(in_channels * 4, out_channels, kernel_size, stride, padding, act=act)
-    #    self.bn = nn.BatchNorm2d(out_channels)
-    #    self.act = nn.SiLU() if act else nn.Identity()
+        self.conv = nn.Conv2d(in_channels * 4, out_channels, kernel_size, stride, padding)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.act = nn.SiLU() if act else nn.Identity()
 
     def forward(self, x):
         x = torch.cat([
@@ -171,7 +171,7 @@ import torch.nn.functional as F
        # x = self.conv(x)
       #  x = self.bn(x)
      #   x = self.act(x)
-        return x """
+        return x
 
 class GhostConv(nn.Module):
     """Ghost Convolution https://github.com/huawei-noah/ghostnet."""
