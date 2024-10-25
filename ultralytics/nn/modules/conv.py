@@ -141,7 +141,7 @@ class Focus(nn.Module):
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):
         super().__init__()
         self.conv = Conv(c1 * 4, c2, k, s, p, g, act=act)
-        self.bn = nn.BatchNorm2d(out_channels)
+        self.bn = nn.BatchNorm2d(c2)
 
         self.act = nn.SiLU()  # Activation function
 
