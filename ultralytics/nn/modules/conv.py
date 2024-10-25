@@ -141,11 +141,15 @@ class Focus(nn.Module):
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):
         super().__init__()
         self.conv = Conv(c1 * 4, c2, k, s, p, g, act=act)
+        self.bn = nn.BatchNorm2d(out_channels)
+
+        self.act = nn.SiLU()  # Activation function
+
         # self.contract = Contract(gain=2)
 
     def forward(self, x):
      
-        return self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))
+        return self.act(self.bn(self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))))
         # return self.conv(self.contract(x))
 
 import torch.nn.functional as F
