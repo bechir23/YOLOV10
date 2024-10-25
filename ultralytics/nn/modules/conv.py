@@ -155,17 +155,18 @@ class Focus(nn.Module):
     
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, g=1, act=True):
         super().__init__()
-        self.conv = Conv(in_channels * 5, out_channels, kernel_size, stride, padding ,act=act)
-        self.bn = nn.BatchNorm(out_channels)
+        self.conv = Conv(in_channels * 4, out_channels, kernel_size, stride, padding ,act=act)
+        self.bn = nn.BatchNorm2d(out_channels)
         self.act = nn.SiLU()  # Activation function
 
     def forward(self, x):
         # Slice the input tensor and concatenate along the channel dimension
         identity = x 
         
-        x=torch.cat((x[..., ::2, ::2].permute(0,1,3,2), x[..., 1::2, ::2].permute(0,1,3,2), x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1)
+        x=torch.cat((x[..., ::2].permute(0,1,3,2), x[..., 1::2].permute(0,1,3,2), x[..., ::2, :], x[..., 1::2, :]), 1)
         x = F.interpolate(x, size=(identity.size(2),identity.size(3)), mode='bicubic', align_corners=False)
-        x = self.conv(torch.cat((identity, x), dim=1))
+     #   x = self.conv(torch.cat((identity, x), dim=1))
+        x= self.conv(x)
         x = self.bn(x)
         x = self.act(x)
         return x
