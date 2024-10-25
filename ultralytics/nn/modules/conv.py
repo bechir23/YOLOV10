@@ -160,7 +160,7 @@ class Focus(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
         super().__init__()
         # Remove the 'act' parameter from Conv2d, just set the convolution
-        self.conv = nn.Conv2d(in_channels * 5, out_channels, kernel_size, stride, padding)
+        self.conv = nn.Conv2d(in_channels * 4, out_channels, kernel_size, stride, padding)
         self.bn = nn.BatchNorm2d(out_channels)
         self.act = nn.SiLU()  # Activation function
 
