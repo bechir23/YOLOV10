@@ -158,9 +158,9 @@ class Focus(nn.Module):
 
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, act=True):
         super(Focus, self).__init__()
-        self.conv = Conv(in_channels * 4, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
-        self.bn = nn.BatchNorm2d(out_channels)
-        self.act = nn.SiLU() if act else nn.Identity()
+        self.conv = Conv(in_channels * 4, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, act=act)
+    #    self.bn = nn.BatchNorm2d(out_channels)
+    #    self.act = nn.SiLU() if act else nn.Identity()
 
     def forward(self, x):
         x = torch.cat([
@@ -169,9 +169,9 @@ class Focus(nn.Module):
             x[..., ::2, 1::2],  # Top-right
             x[..., 1::2, 1::2]  # Bottom-right
         ], dim=1)
-        x = self.conv(x)
-        x = self.bn(x)
-        x = self.act(x)
+       # x = self.conv(x)
+      #  x = self.bn(x)
+     #   x = self.act(x)
         return x
 
 class GhostConv(nn.Module):
