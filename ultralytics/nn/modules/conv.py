@@ -158,7 +158,7 @@ class Focus(nn.Module):
 
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, act=True):
         super(Focus, self).__init__()
-        self.conv = nn.Conv2d(in_channels * 4, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
+        self.conv = Conv(in_channels * 4, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
         self.bn = nn.BatchNorm2d(out_channels)
         self.act = nn.SiLU() if act else nn.Identity()
 
