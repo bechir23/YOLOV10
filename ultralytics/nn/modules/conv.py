@@ -135,7 +135,7 @@ class ConvTranspose(nn.Module):
         """Applies activation and convolution transpose operation to input."""
         return self.act(self.conv_transpose(x))
 
-
+"""
 class Focus(nn.Module):
 
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):
@@ -151,10 +151,41 @@ class Focus(nn.Module):
      
         return self.act(self.bn(self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))))
         # return self.conv(self.contract(x))
-
+"""
 import torch.nn.functional as F
 
+class Focus(nn.Module):
+    """Focus layer to reduce the spatial dimensions and enhance feature extraction."""
+    
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+        super().__init__()
+        # Remove the 'act' parameter from Conv2d, just set the convolution
+        self.conv = nn.Conv2d(in_channels * 5, out_channels, kernel_size, stride, padding)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.act = nn.SiLU()  # Activation function
 
+    def forward(self, x):
+        # Save the identity for later concatenation
+        identity = x 
+
+        # Slice the input tensor and concatenate along the channel dimension
+        x = torch.cat([
+            x[..., ::2, ::2],   # Top left
+            x[..., 1::2, ::2],  # Bottom left
+            x[..., ::2, 1::2],  # Top right
+            x[..., 1::2, 1::2]  # Bottom right
+        ], dim=1)
+
+        # Apply convolution, batch normalization, and activation
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.act(x)
+
+        # Upsample the output to match the original resolution using bicubic interpolation
+        x = F.interpolate(x, size=(identity.size(2), identity.size(3)), mode='bicubic', align_corners=False)
+
+        # Concatenate the identity tensor with the output along the channel dimension and apply the second convolution
+        return self.conv(torch.cat((identity, x), dim=1))
 class GhostConv(nn.Module):
     """Ghost Convolution https://github.com/huawei-noah/ghostnet."""
 
