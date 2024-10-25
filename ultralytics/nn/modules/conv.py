@@ -154,7 +154,6 @@ class Focus(nn.Module):
 
 import torch.nn.functional as F
 """class Focus(nn.Module):
-    """Focus layer to reduce spatial dimensions and enhance feature extraction."""
 
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, act=True):
         super(Focus, self).__init__()
