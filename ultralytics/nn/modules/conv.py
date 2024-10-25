@@ -157,15 +157,13 @@ import torch.nn.functional as F
 class Focus(nn.Module):
     """Focus layer to reduce the spatial dimensions and enhance feature extraction."""
     
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1,activation=False):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1,):
         super().__init__()
         self.conv = nn.Conv2d(in_channels * 4, out_channels, kernel_size, stride, padding)
         self.bn = nn.BatchNorm2d(out_channels)
         self.act = nn.SiLU()  # Activation function
 
     def forward(self, x):
-        # Save the identity for later concatenation
-        identity = x 
 
         # Slice the input tensor and concatenate along the channel dimension
         x = torch.cat([
@@ -175,13 +173,6 @@ class Focus(nn.Module):
             x[..., 1::2, 1::2]  # Bottom right
         ], dim=1)
 
-        # Apply convolution, batch normalization, and activation
-       
-
-        # Upsample the output to match the original resolution using bicubic interpolation
-     #   x = F.interpolate(x, size=(identity.size(2), identity.size(3)), mode='bicubic', align_corners=False)
-
-        # Concatenate the identity tensor with the output along the channel dimension and apply the second convolution
         return  self.act(self.bn(self.conv(x)))
 class GhostConv(nn.Module):
     """Ghost Convolution https://github.com/huawei-noah/ghostnet."""
