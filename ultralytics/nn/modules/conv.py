@@ -135,25 +135,25 @@ class ConvTranspose(nn.Module):
         """Applies activation and convolution transpose operation to input."""
         return self.act(self.conv_transpose(x))
 
-"""
+
 class Focus(nn.Module):
 
-    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):
+    def __init__(self, c1, c2, k=1, s=1, p=1, g=1, act=True):
         super().__init__()
         self.conv = Conv(c1 * 4, c2, k, s, p, g, act=act)
-        self.bn = nn.BatchNorm2d(c2)
+  #      self.bn = nn.BatchNorm2d(c2)
 
-        self.act = nn.SiLU()  # Activation function
+#        self.act = nn.SiLU()  # Activation function
 
         # self.contract = Contract(gain=2)
 
     def forward(self, x):
      
-        return self.act(self.bn(self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))))
+        return self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))
         # return self.conv(self.contract(x))
-"""
+
 import torch.nn.functional as F
-class Focus(nn.Module):
+"""class Focus(nn.Module):
     """Focus layer to reduce spatial dimensions and enhance feature extraction."""
 
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, act=True):
@@ -172,7 +172,7 @@ class Focus(nn.Module):
        # x = self.conv(x)
       #  x = self.bn(x)
      #   x = self.act(x)
-        return x
+        return x """
 
 class GhostConv(nn.Module):
     """Ghost Convolution https://github.com/huawei-noah/ghostnet."""
