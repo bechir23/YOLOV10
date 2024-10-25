@@ -177,15 +177,13 @@ class Focus(nn.Module):
         ], dim=1)
 
         # Apply convolution, batch normalization, and activation
-        x = self.conv(x)
-        x = self.bn(x)
-        x = self.act(x)
+       
 
         # Upsample the output to match the original resolution using bicubic interpolation
         x = F.interpolate(x, size=(identity.size(2), identity.size(3)), mode='bicubic', align_corners=False)
 
         # Concatenate the identity tensor with the output along the channel dimension and apply the second convolution
-        return self.conv(torch.cat((identity, x), dim=1))
+        return  self.act(self.bn(self.conv(torch.cat((identity, x), dim=1))))
 class GhostConv(nn.Module):
     """Ghost Convolution https://github.com/huawei-noah/ghostnet."""
 
