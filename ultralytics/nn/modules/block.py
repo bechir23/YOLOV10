@@ -1253,8 +1253,8 @@ class EMA(nn.Module):
         self.pool_h = nn.AdaptiveAvgPool2d((None, 1))
         self.pool_w = nn.AdaptiveAvgPool2d((1, None))
         self.gn = nn.GroupNorm(channels // self.groups, channels // self.groups)
-        self.conv1x1 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0)
-        self.conv3x3 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=3, stride=1, padding=1)
+        self.conv1x1 = Conv(channels // self.groups, channels // self.groups, 1, 1, act=True)
+        self.conv3x3 = Conv(channels // self.groups, channels // self.groups, 3, 1 , act=True)
  
     def forward(self, x):
         b, c, h, w = x.size()
