@@ -164,7 +164,7 @@ class Focus(nn.Module):
         identity = x 
         
         x=torch.cat((x[..., ::2], x[..., 1::2], x[..., ::2, :].permute(0,1,3,2), x[..., 1::2, :].permute(0,1,3,2)), 1)
-       # x = F.interpolate(x, size=(identity.size(2),identity.size(3)), mode='bicubic', align_corners=False)
+        x = F.interpolate(x, size=(identity.size(2),identity.size(3)), mode='bicubic', align_corners=False)
      #   x = self.conv(torch.cat((identity, x), dim=1))
         x= self.conv(x)
         x = self.bn(x)
