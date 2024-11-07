@@ -229,7 +229,6 @@ class C2f(nn.Module):
         self.m = nn.ModuleList(BottleneckCSP(self.c, self.c,1,shortcut,g, e=1.0) for _ in range(n))
 
     def forward(self, x):
-        print("c2f x", x.shape)
         y = list(self.cv1(x).chunk(2, 1))
         y.extend(m(y[-1]) for m in self.m)
         output=self.cv2(torch.cat(y, 1))
