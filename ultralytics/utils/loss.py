@@ -23,7 +23,7 @@ class VarifocalLoss(nn.Module):
         super().__init__()
 
     @staticmethod
-    def forward(pred_score, gt_score, label, alpha=0.75, gamma=2.0):
+    def forward(pred_score, gt_score, label, alpha=0.25, gamma=1.5):
         """Computes varfocal loss."""
         weight = alpha * pred_score.sigmoid().pow(gamma) * (1 - label) + gt_score * label
         with torch.cuda.amp.autocast(enabled=False):
