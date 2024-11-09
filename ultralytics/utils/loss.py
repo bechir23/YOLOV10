@@ -237,7 +237,7 @@ class v8DetectionLoss:
 
 # Cls loss: Pass the one-hot encoded labels to the varifocal loss
    #     loss[1] = self.varifocal_loss(pred_scores, target_scores, one_hot) / target_scores_sum  # Use one_hot for class labels
-         loss[1] = self.varifocal_loss(pred_scores,one_hot)
+         loss[1] = self.focal_loss(pred_scores,one_hot)
        # loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
 
         # Bbox loss
