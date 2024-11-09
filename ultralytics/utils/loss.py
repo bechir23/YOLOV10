@@ -159,9 +159,9 @@ class v8DetectionLoss:
         self.no = m.no
         self.reg_max = m.reg_max
         self.device = device
-        g = h['fl_gamma']  # focal loss gamma
-        self.FocalLoss=FocalLoss()
-        self.bce = self.FocalLoss(self.bce, g)
+        g = getattr(h, 'fl_gamma', 2)  # Use a default if fl_gamma is undefined
+        if g > 0:
+            self.bce = FocalLoss(self.bce, g)
 
         self.use_dfl = m.reg_max > 1
 
