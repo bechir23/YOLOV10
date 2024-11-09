@@ -44,33 +44,6 @@ class DecoupledHead(nn.Module):
         x22 = self.obj_preds(x2)
         out = torch.cat([x21, x22, x1], 1)
         return out
-import torch
-import torch.nn as nn
-import math
-from torch import Tensor
-
-class Conv(nn.Module):
-    """Simple Conv module for feature extraction."""
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=1):
-        super(Conv, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
-    
-    def forward(self, x):
-        return self.conv(x)
-
-class DFL(nn.Module):
-    """Dynamic Filter Layer (DFL) for YOLOv8."""
-    def __init__(self, reg_max):
-        super(DFL, self).__init__()
-        self.reg_max = reg_max
-
-    def forward(self, x):
-        return x
-
-def dist2bbox(x: Tensor, anchors: Tensor, xywh: bool = True, dim: int = 1) -> Tensor:
-    """Decode bounding boxes."""
-    # Decode bounding boxes logic here
-    return x
 
 def make_anchors(x, strides, threshold=0.5):
     """Create anchors for different layers."""
