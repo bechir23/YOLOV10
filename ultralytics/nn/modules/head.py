@@ -45,92 +45,94 @@ class DecoupledHead(nn.Module):
         out = torch.cat([x21, x22, x1], 1)
         return out
 class Detect(nn.Module):
-    """YOLOv8 Detect head for detection models with a decoupled head."""
-    
+    """YOLOv8 Detect head for detection models with decoupled heads."""
+
     dynamic = False  # force grid reconstruction
     export = False  # export mode
     shape = None
     anchors = torch.empty(0)  # init
     strides = torch.empty(0)  # init
 
-    def __init__(self, nc=80, ch=(), anchors=(), width=1.0):
+    def __init__(self, nc=80, ch=()):
         """Initializes the YOLOv8 detection layer with specified number of classes and channels."""
         super().__init__()
         self.nc = nc  # number of classes
         self.nl = len(ch)  # number of detection layers
-        self.no = nc + 5  # number of outputs per anchor (class + 4 bbox + objectness)
+        self.reg_max = 16  # DFL channels (ch[0] // 16 to scale 4/8/12/16/20 for n/s/m/l/x)
+        self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.stride = torch.zeros(self.nl)  # strides computed during build
-        
-        # Initialize DecoupledHead for each detection layer
-        self.m = nn.ModuleList([DecoupledHead(ch[i], nc, width, anchors) for i in range(self.nl)])
-        
-        # Register anchor grid and strides
-        self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))  # shape(nl, na, 2)
-        self.stride = torch.zeros(self.nl)
 
-    def forward_feat(self, x):
-        """Forward pass through each detection layer."""
+        # Define the heads for classification and bounding boxes
+        c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))  # channels
+        self.box_head = nn.ModuleList(
+            nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch
+        )  # Bounding box prediction head
+        self.cls_head = nn.ModuleList(
+            nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch
+        )  # Classification head
+        self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
+
+    def inference(self, x):
+        # Inference path
+        shape = x[0].shape  # BCHW
+        x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
+        
+        # Dynamic anchors and strides handling
+        if self.dynamic or self.shape != shape:
+            self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5))
+            self.shape = shape
+
+        # Split the predictions into box and class scores
+        if self.export and self.format in ("saved_model", "pb", "tflite", "edgetpu", "tfjs"):  # avoid TF FlexSplitV ops
+            box = x_cat[:, : self.reg_max * 4]
+            cls = x_cat[:, self.reg_max * 4 :]
+        else:
+            box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
+
+        # Apply normalization for export
+        if self.export and self.format in ("tflite", "edgetpu"):
+            grid_h = shape[2]
+            grid_w = shape[3]
+            grid_size = torch.tensor([grid_w, grid_h, grid_w, grid_h], device=box.device).reshape(1, 4, 1)
+            norm = self.strides / (self.stride[0] * grid_size)
+            dbox = self.decode_bboxes(self.dfl(box) * norm, self.anchors.unsqueeze(0) * norm[:, :2])
+        else:
+            dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
+
+        # Concatenate decoded bounding boxes and classification probabilities
+        y = torch.cat((dbox, cls.sigmoid()), 1)
+        return y if self.export else (y, x)
+
+    def forward_feat(self, x, box_head, cls_head):
         y = []
         for i in range(self.nl):
-            y.append(self.m[i](x[i]))  # Apply decoupled head
+            # Use decoupled heads for box and class predictions
+            box_feat = box_head[i](x[i])
+            cls_feat = cls_head[i](x[i])
+            y.append(torch.cat((box_feat, cls_feat), 1))
         return y
 
     def forward(self, x):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
-        y = self.forward_feat(x)  # Get the outputs from the decoupled head
-        
+        y = self.forward_feat(x, self.box_head, self.cls_head)
+
         if self.training:
-            return y  # Return for training
-        
-        # Inference mode
-        z = []  # inference output
-        for i in range(self.nl):
-            bs, _, ny, nx = y[i].shape  # x(bs, output_channels, grid_size, grid_size)
-            y[i] = y[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+            return y
 
-            if not self.training:  # inference
-                if self.dynamic or self.shape != y[i].shape:
-                    self.shape = y[i].shape  # Update shape
-                    self.grid, self.anchor_grid = self._make_grid(nx, ny, i)
-
-                # Apply sigmoid to get class probability and objectness
-                y_sigmoid = y[i].sigmoid()
-
-                # Adjust coordinates and dimensions
-                xy = (y_sigmoid[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy
-                wh = (y_sigmoid[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
-
-                # Combine bbox (xywh), objectness and class predictions
-                cls = y_sigmoid[..., 4:]  # Class prediction (after objectness)
-
-                # Concatenate to form the final output: [bbox, objectness, class]
-                out = torch.cat((xy, wh, y_sigmoid[..., 4:]), -1)  # xywh + obj + class
-
-                z.append(out.view(bs, -1, self.no))
-
-        return torch.cat(z, 1) if not self.training else y
-
-    def _make_grid(self, nx=20, ny=20, i=0):
-        """Generate grid and anchor grid."""
-        d = self.anchors.device
-        yv, xv = torch.meshgrid([torch.arange(ny).to(d), torch.arange(nx).to(d)], indexing='ij')
-        grid = torch.stack((xv, yv), 2).expand((1, self.na, ny, nx, 2)).float()
-        anchor_grid = (self.anchors[i].clone() * self.stride[i]) \
-            .view((1, self.na, 1, 1, 2)).expand((1, self.na, ny, nx, 2)).float()
-        return grid, anchor_grid
+        return self.inference(y)
 
     def bias_init(self):
-        """Initialize biases in the detection head."""
+        """Initialize Detect() biases, WARNING: requires stride availability."""
         m = self  # self.model[-1]  # Detect() module
-        for a, b, s in zip(m.m, m.stride):  # For each detection layer
-            a.cls_preds.bias.data[:] = 1.0  # Set bias to 1.0 for class predictions
-            b.cls_preds.bias.data[:self.nc] = math.log(5 / self.nc / (640 / s) ** 2)  # Class bias init
+        for a, b, s in zip(m.box_head, m.cls_head, m.stride):  # from
+            a[-1].bias.data[:] = 1.0  # box
+            b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (.01 objects, 80 classes, 640 img)
 
     def decode_bboxes(self, bboxes, anchors):
         """Decode bounding boxes."""
-        return dist2bbox(bboxes, anchors, xywh=True, dim=1)  # Decode using xywh format
-
-
+        if self.export:
+            return dist2bbox(bboxes, anchors, xywh=False, dim=1)
+        return dist2bbox(bboxes, anchors, xywh=True, dim=1)
 
 
 
