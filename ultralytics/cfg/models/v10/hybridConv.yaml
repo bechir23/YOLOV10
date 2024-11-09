@@ -53,4 +53,4 @@ head:
   - [-1, 1, EMA, [512]] # Applying EMA to emphasize prominent features at P4
 
   # Detection layer to output results for each level (P3, P4, P5)
-  - [[22, 26, 30], 1, Detect, [nc,anchors]] # Detect at different scales (P3, P4, P5)
+  - [[22, 26, 30], 1, Detect, [nc]] # Detect at different scales (P3, P4, P5)
