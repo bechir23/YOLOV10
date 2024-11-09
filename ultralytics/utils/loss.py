@@ -162,6 +162,7 @@ class v8DetectionLoss:
       
 
         self.use_dfl = m.reg_max > 1
+        self.bce= FocalLoss()
 
         self.assigner = TaskAlignedAssigner(topk=tal_topk, num_classes=self.nc, alpha=0.5, beta=6.0)
         self.bbox_loss = BboxLoss(m.reg_max - 1, use_dfl=self.use_dfl).to(device)
@@ -234,7 +235,8 @@ class v8DetectionLoss:
 
         # Cls loss
        # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL
-        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        #loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        loss[1] = self.bce(pred_scores, target_labels)
  
         # Bbox loss
         if fg_mask.sum():
