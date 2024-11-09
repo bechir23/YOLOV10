@@ -159,9 +159,7 @@ class v8DetectionLoss:
         self.no = m.no
         self.reg_max = m.reg_max
         self.device = device
-        g = getattr(h, 'fl_gamma', 2)  # Use a default if fl_gamma is undefined
-        if g > 0:
-            self.bce = FocalLoss(self.bce)
+      
 
         self.use_dfl = m.reg_max > 1
 
@@ -169,7 +167,7 @@ class v8DetectionLoss:
         self.bbox_loss = BboxLoss(m.reg_max - 1, use_dfl=self.use_dfl).to(device)
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
 
-        self.varifocal_loss = VarifocalLoss()
+      #  self.varifocal_loss = VarifocalLoss()
 
     def preprocess(self, targets, batch_size, scale_tensor):
         """Preprocesses the target counts and matches with the input batch size to output a tensor."""
@@ -235,8 +233,9 @@ class v8DetectionLoss:
         target_scores = target_scores.view(pred_scores.shape)
 
         # Cls loss
-        loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL
-
+       # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL
+        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+ 
         # Bbox loss
         if fg_mask.sum():
             target_bboxes /= stride_tensor
