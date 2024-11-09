@@ -45,10 +45,6 @@ class DecoupledHead(nn.Module):
         out = torch.cat([x21, x22, x1], 1)
         return out
 
-def make_anchors(x, strides, threshold=0.5):
-    """Create anchors for different layers."""
-    # Dummy anchor generation for the example
-    return x, strides  # returns anchors and strides
 
 class Detect(nn.Module):
     """YOLOv8 Detect head for detection models with decoupled heads."""
