@@ -152,13 +152,18 @@ class v8DetectionLoss:
         h = model.args  # hyperparameters
 
         m = model.model[-1]  # Detect() module
-        self.bce = nn.BCEWithLogitsLoss(reduction="none")
+        class_weights_tensor = torch.tensor([7.6308e+00, 7.7943e+02, 6.2857e+00, 2.6281e+00, 9.0933e+02, 9.8841e+00,
+                                     3.4100e+02, 5.4560e+03, 1.5369e+01, 5.6833e+01, 8.0353e+00, 6.4188e+01],
+                                    device="cuda" if torch.cuda.is_available() else "cpu")
+
+# BCEWithLogitsLoss expects `pred_scores` to be raw logits, not probabilities
+        self.bce = nn.BCEWithLogitsLoss(reduction="none",weight=class_weights_tensor)
         self.hyp = h
         self.stride = m.stride  # model strides
         self.nc = m.nc  # number of classes
         self.no = m.no
         self.reg_max = m.reg_max
-        self.focal_loss = FocalLoss() 
+      #  self.focal_loss = FocalLoss() 
         self.device = device
 
         self.use_dfl = m.reg_max > 1
@@ -231,14 +236,15 @@ class v8DetectionLoss:
 
         # Cls loss
        # One-hot encoding for class labels
-        target_labels = target_labels.unsqueeze(-1).expand(-1, -1, self.nc)  # Expand to shape [batch_size, anchors, num_classes]
-        one_hot = torch.zeros(target_labels.size(), device=self.device)
-        one_hot.scatter_(-1, target_labels, 1)  # Create one-hot encoding for each class
+       # target_labels = target_labels.unsqueeze(-1).expand(-1, -1, self.nc)  # Expand to shape [batch_size, anchors, num_classes]
+       # one_hot = torch.zeros(target_labels.size(), device=self.device)
+      #  one_hot.scatter_(-1, target_labels, 1)  # Create one-hot encoding for each class
 
 # Cls loss: Pass the one-hot encoded labels to the varifocal loss
     #    loss[1] = self.varifocal_loss(pred_scores, target_scores, one_hot) / target_scores_sum  # Use one_hot for class labels
-        loss[1] = self.focal_loss(pred_scores,one_hot)
-       # loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+      #  loss[1] = self.focal_loss(pred_scores,one_hot)
+        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+
 
         # Bbox loss
         if fg_mask.sum():
