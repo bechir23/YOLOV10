@@ -152,12 +152,12 @@ class v8DetectionLoss:
         h = model.args  # hyperparameters
 
         m = model.model[-1]  # Detect() module
-        class_weights_tensor = torch.tensor([7.6308e+00, 7.7943e+02, 6.2857e+00, 2.6281e+00, 9.0933e+02, 9.8841e+00,
-                                     3.4100e+02, 5.4560e+03, 1.5369e+01, 5.6833e+01, 8.0353e+00, 6.4188e+01],
-                                    device="cuda" if torch.cuda.is_available() else "cpu")
+      #  class_weights_tensor = torch.tensor([7.6308e+00, 7.7943e+02, 6.2857e+00, 2.6281e+00, 9.0933e+02, 9.8841e+00,
+       #                              3.4100e+02, 5.4560e+03, 1.5369e+01, 5.6833e+01, 8.0353e+00, 6.4188e+01],
+        #                            device="cuda" if torch.cuda.is_available() else "cpu")
 
 # BCEWithLogitsLoss expects `pred_scores` to be raw logits, not probabilities
-        self.bce = nn.BCEWithLogitsLoss(reduction="none",weight=class_weights_tensor)
+        self.bce = nn.BCEWithLogitsLoss(reduction="none")
         self.hyp = h
         self.stride = m.stride  # model strides
         self.nc = m.nc  # number of classes
