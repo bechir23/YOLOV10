@@ -6,6 +6,7 @@ import math
 import torch
 import torch.nn as nn
 from torch.nn.init import constant_, xavier_uniform_
+import numpy as np
 
 from ultralytics.utils.tal import TORCH_1_10, dist2bbox, dist2rbox, make_anchors
 from .block import DFL, Proto, ContrastiveHead, BNContrastiveHead
