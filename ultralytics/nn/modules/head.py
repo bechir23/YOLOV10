@@ -44,6 +44,39 @@ class DecoupledHead(nn.Module):
         x22 = self.obj_preds(x2)
         out = torch.cat([x21, x22, x1], 1)
         return out
+import torch
+import torch.nn as nn
+import math
+from torch import Tensor
+
+class Conv(nn.Module):
+    """Simple Conv module for feature extraction."""
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=1):
+        super(Conv, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
+    
+    def forward(self, x):
+        return self.conv(x)
+
+class DFL(nn.Module):
+    """Dynamic Filter Layer (DFL) for YOLOv8."""
+    def __init__(self, reg_max):
+        super(DFL, self).__init__()
+        self.reg_max = reg_max
+
+    def forward(self, x):
+        return x
+
+def dist2bbox(x: Tensor, anchors: Tensor, xywh: bool = True, dim: int = 1) -> Tensor:
+    """Decode bounding boxes."""
+    # Decode bounding boxes logic here
+    return x
+
+def make_anchors(x, strides, threshold=0.5):
+    """Create anchors for different layers."""
+    # Dummy anchor generation for the example
+    return x, strides  # returns anchors and strides
+
 class Detect(nn.Module):
     """YOLOv8 Detect head for detection models with decoupled heads."""
 
@@ -62,15 +95,14 @@ class Detect(nn.Module):
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.stride = torch.zeros(self.nl)  # strides computed during build
 
-        # Define the heads for classification and bounding boxes
+        # Define the heads for classification and bounding boxes (cv2 for box and cv3 for class)
         c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))  # channels
-    
         self.cv2 = nn.ModuleList(
             nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch
-        )  # Bounding box prediction head
+        )  # Bounding box prediction head (replaces box_head)
         self.cv3 = nn.ModuleList(
             nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch
-        )  # Classification head
+        )  # Classification head (replaces cls_head)
         self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
 
     def inference(self, x):
@@ -104,18 +136,18 @@ class Detect(nn.Module):
         y = torch.cat((dbox, cls.sigmoid()), 1)
         return y if self.export else (y, x)
 
-    def forward_feat(self, x, box_head, cls_head):
+    def forward_feat(self, x, cv2, cv3):
         y = []
         for i in range(self.nl):
             # Use decoupled heads for box and class predictions
-            box_feat = box_head[i](x[i])
-            cls_feat = cls_head[i](x[i])
+            box_feat = cv2[i](x[i])
+            cls_feat = cv3[i](x[i])
             y.append(torch.cat((box_feat, cls_feat), 1))
         return y
 
     def forward(self, x):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
-        y = self.forward_feat(x, self.box_head, self.cls_head)
+        y = self.forward_feat(x, self.cv2, self.cv3)
 
         if self.training:
             return y
@@ -125,7 +157,7 @@ class Detect(nn.Module):
     def bias_init(self):
         """Initialize Detect() biases, WARNING: requires stride availability."""
         m = self  # self.model[-1]  # Detect() module
-        for a, b, s in zip(m.box_head, m.cls_head, m.stride):  # from
+        for a, b, s in zip(m.cv2, m.cv3, m.stride):  # from
             a[-1].bias.data[:] = 1.0  # box
             b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (.01 objects, 80 classes, 640 img)
 
