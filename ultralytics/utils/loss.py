@@ -160,8 +160,8 @@ class v8DetectionLoss:
         self.reg_max = m.reg_max
         self.device = device
         g = h['fl_gamma']  # focal loss gamma
-        if g > 0:
-            self.bce = FocalLoss(self.bce, g)
+        self.FocalLoss=FocalLoss()
+        self.bce = self.FocalLoss(self.bce, g)
 
         self.use_dfl = m.reg_max > 1
 
