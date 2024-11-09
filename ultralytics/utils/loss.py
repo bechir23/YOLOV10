@@ -158,6 +158,7 @@ class v8DetectionLoss:
         self.nc = m.nc  # number of classes
         self.no = m.no
         self.reg_max = m.reg_max
+        self.focal_loss = FocalLoss() 
         self.device = device
 
         self.use_dfl = m.reg_max > 1
@@ -235,8 +236,8 @@ class v8DetectionLoss:
         one_hot.scatter_(-1, target_labels, 1)  # Create one-hot encoding for each class
 
 # Cls loss: Pass the one-hot encoded labels to the varifocal loss
-        loss[1] = self.varifocal_loss(pred_scores, target_scores, one_hot) / target_scores_sum  # Use one_hot for class labels
-
+   #     loss[1] = self.varifocal_loss(pred_scores, target_scores, one_hot) / target_scores_sum  # Use one_hot for class labels
+         loss[1] = self.varifocal_loss(pred_scores,one_hot)
        # loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
 
         # Bbox loss
