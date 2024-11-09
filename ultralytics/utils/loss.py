@@ -229,13 +229,10 @@ class v8DetectionLoss:
         target_scores_sum = max(target_scores.sum(), 1)
 
         # Cls loss
-        print("target_labels")
-        print(target_labels.shape)
-        print("target_scores")
-        print(target_scores.shape)
-        print("pred_score")
-        print(pred_scores.shape)
-        loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
+        target_labels_onehot = torch.zeros_like(target_labels, dtype=torch.float32)
+        target_labels_onehot = target_labels_onehot.scatter_(2, target_labels.unsqueeze(-1), 1)
+       
+        loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels_onehot) / target_scores_sum  # VFL way
        # loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
 
         # Bbox loss
