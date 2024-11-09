@@ -17,88 +17,88 @@ from ultralytics.utils import ops
 
 __all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder"
 
-
-class Detect(nn.Module):
-    """YOLOv8 Detect head for detection models."""
-
-    dynamic = False  # force grid reconstruction
-    export = False  # export mode
-    shape = None
-    anchors = torch.empty(0)  # init
-    strides = torch.empty(0)  # init
-
-    def __init__(self, nc=80, ch=()):
-        """Initializes the YOLOv8 detection layer with specified number of classes and channels."""
+class DecoupledHead(nn.Module):
+    def __init__(self, ch=256, nc=80, width=1.0, anchors=()):
         super().__init__()
         self.nc = nc  # number of classes
-        self.nl = len(ch)  # number of detection layers
-        self.reg_max = 16  # DFL channels (ch[0] // 16 to scale 4/8/12/16/20 for n/s/m/l/x)
-        self.no = nc + self.reg_max * 4  # number of outputs per anchor
-        self.stride = torch.zeros(self.nl)  # strides computed during build
-        c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))  # channels
-        self.cv2 = nn.ModuleList(
-            nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch
-        )
-        self.cv3 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch)
-        self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
-
-    def inference(self, x):
-        # Inference path
-        shape = x[0].shape  # BCHW
-        x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
-        if self.dynamic or self.shape != shape:
-            self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5))
-            self.shape = shape
-
-        if self.export and self.format in ("saved_model", "pb", "tflite", "edgetpu", "tfjs"):  # avoid TF FlexSplitV ops
-            box = x_cat[:, : self.reg_max * 4]
-            cls = x_cat[:, self.reg_max * 4 :]
-        else:
-            box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
-
-        if self.export and self.format in ("tflite", "edgetpu"):
-            # Precompute normalization factor to increase numerical stability
-            # See https://github.com/ultralytics/ultralytics/issues/7371
-            grid_h = shape[2]
-            grid_w = shape[3]
-            grid_size = torch.tensor([grid_w, grid_h, grid_w, grid_h], device=box.device).reshape(1, 4, 1)
-            norm = self.strides / (self.stride[0] * grid_size)
-            dbox = self.decode_bboxes(self.dfl(box) * norm, self.anchors.unsqueeze(0) * norm[:, :2])
-        else:
-            dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
-
-        y = torch.cat((dbox, cls.sigmoid()), 1)
-        return y if self.export else (y, x)
-
-    def forward_feat(self, x, cv2, cv3):
-        y = []
-        for i in range(self.nl):
-            y.append(torch.cat((cv2[i](x[i]), cv3[i](x[i])), 1))
-        return y
+        self.nl = len(anchors)  # number of detection layers
+        self.na = len(anchors[0]) // 2  # number of anchors
+        self.merge = Conv(ch, 256 * width, 1, 1)
+        self.cls_convs1 = Conv(256 * width, 256 * width, 3, 1, 1)
+        self.cls_convs2 = Conv(256 * width, 256 * width, 3, 1, 1)
+        self.reg_convs1 = Conv(256 * width, 256 * width, 3, 1, 1)
+        self.reg_convs2 = Conv(256 * width, 256 * width, 3, 1, 1)
+        self.cls_preds = nn.Conv2d(256 * width, self.nc * self.na, 1)
+        self.reg_preds = nn.Conv2d(256 * width, 4 * self.na, 1)
+        self.obj_preds = nn.Conv2d(256 * width, 1 * self.na, 1)
 
     def forward(self, x):
-        """Concatenates and returns predicted bounding boxes and class probabilities."""
-        y = self.forward_feat(x, self.cv2, self.cv3)
-        
-        if self.training:
-            return y
+        x = self.merge(x)
+        x1 = self.cls_convs1(x)
+        x1 = self.cls_convs2(x1)
+        x1 = self.cls_preds(x1)
+        x2 = self.reg_convs1(x)
+        x2 = self.reg_convs2(x2)
+        x21 = self.reg_preds(x2)
+        x22 = self.obj_preds(x2)
+        out = torch.cat([x21, x22, x1], 1)
+        return out
 
-        return self.inference(y)
 
-    def bias_init(self):
-        """Initialize Detect() biases, WARNING: requires stride availability."""
-        m = self  # self.model[-1]  # Detect() module
-        # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1
-        # ncf = math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # nominal class frequency
-        for a, b, s in zip(m.cv2, m.cv3, m.stride):  # from
-            a[-1].bias.data[:] = 1.0  # box
-            b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (.01 objects, 80 classes, 640 img)
+class Detect(nn.Module):
+    # anchor free with decoupled head
+    stride = None  # strides computed during build
+    onnx_dynamic = False  # ONNX export parameter
 
-    def decode_bboxes(self, bboxes, anchors):
-        """Decode bounding boxes."""
-        if self.export:
-            return dist2bbox(bboxes, anchors, xywh=False, dim=1)
-        return dist2bbox(bboxes, anchors, xywh=True, dim=1)
+    def __init__(self, nc=80, anchors=(), ch=(), inplace=True):  # detection layer
+        super().__init__()
+        self.n_anchors = 1
+        self.nc = nc  # number of classes
+        self.no = nc + 5  # number of outputs per anchor
+        self.nl = len(anchors)  # number of detection layers
+        self.na = len(anchors[0]) // 2  # number of anchors
+        self.grid = [torch.zeros(1)] * self.nl  # init grid
+        self.anchor_grid = [torch.zeros(1)] * self.nl  # init anchor grid
+        self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))  # shape(nl,na,2)
+        # self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
+        self.m = nn.ModuleList(DecoupledHead(x,nc,1,anchors) for x in ch)
+
+        self.inplace = inplace  # use in-place ops (e.g. slice assignment)
+
+    def forward(self, x):
+        z = []  # inference output
+        for i in range(self.nl):
+            x[i] = self.m[i](x[i])  # conv
+            bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
+            x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+
+            if not self.training:  # inference
+                if self.onnx_dynamic or self.grid[i].shape[2:4] != x[i].shape[2:4]:
+                    self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
+
+                y = x[i].sigmoid()
+                if self.inplace:
+                    y[..., 0:2] = (y[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                    y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
+                    xy = (y[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                    wh = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                    y = torch.cat((xy, wh, y[..., 4:]), -1)
+                z.append(y.view(bs, -1, self.no))
+
+        return x if self.training else (torch.cat(z, 1), x)
+
+    def _make_grid(self, nx=20, ny=20, i=0):
+        d = self.anchors[i].device
+        if check_version(torch.__version__, '1.10.0'):  # torch>=1.10.0 meshgrid workaround for torch>=0.7 compatibility
+            yv, xv = torch.meshgrid([torch.arange(ny).to(d), torch.arange(nx).to(d)], indexing='ij')
+        else:
+            yv, xv = torch.meshgrid([torch.arange(ny).to(d), torch.arange(nx).to(d)])
+        grid = torch.stack((xv, yv), 2).expand((1, self.na, ny, nx, 2)).float()
+        anchor_grid = (self.anchors[i].clone() * self.stride[i]) \
+            .view((1, self.na, 1, 1, 2)).expand((1, self.na, ny, nx, 2)).float()
+        return grid, anchor_grid
+
 
 
 class Segment(Detect):
