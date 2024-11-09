@@ -6,7 +6,6 @@ import math
 import torch
 import torch.nn as nn
 from torch.nn.init import constant_, xavier_uniform_
-import numpy as np
 
 from ultralytics.utils.tal import TORCH_1_10, dist2bbox, dist2rbox, make_anchors
 from .block import DFL, Proto, ContrastiveHead, BNContrastiveHead
@@ -17,190 +16,89 @@ import copy
 from ultralytics.utils import ops
 
 __all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder"
+
+
 class Detect(nn.Module):
-    """YOLO Detect head for detection models with decoupled head implementation."""
+    """YOLOv8 Detect head for detection models."""
 
     dynamic = False  # force grid reconstruction
     export = False  # export mode
-    end2end = False  # end2end
-    max_det = 300  # max_det
     shape = None
     anchors = torch.empty(0)  # init
     strides = torch.empty(0)  # init
-    legacy = False  # backward compatibility for v3/v5/v8/v9 models
 
-    def __init__(self, nc=80, ch=(), inplace=True):
-        """
-        Initializes the YOLO detection layer with specified number of classes and channels.
-
-        Args:
-            nc (int): Number of classes.
-            ch (list): List of input channels from the backbone for each detection layer.
-            inplace (bool): Use in-place operations.
-        """
+    def __init__(self, nc=80, ch=()):
+        """Initializes the YOLOv8 detection layer with specified number of classes and channels."""
         super().__init__()
         self.nc = nc  # number of classes
         self.nl = len(ch)  # number of detection layers
-        self.reg_max = 16  # DFL parameter
-        self.no = self.nc  # number of outputs per anchor
+        self.reg_max = 16  # DFL channels (ch[0] // 16 to scale 4/8/12/16/20 for n/s/m/l/x)
+        self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.stride = torch.zeros(self.nl)  # strides computed during build
-        self.inplace = inplace  # use in-place operations
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-        # Decoupled head implementation
-        # Create separate classification and regression branches
-        self.reg_convs = nn.ModuleList()
-        self.cls_convs = nn.ModuleList()
-        self.reg_preds = nn.ModuleList()
-        self.cls_preds = nn.ModuleList()
-
-        for i in range(self.nl):
-            # Regression branch
-            reg_conv = nn.Sequential(
-                Conv(ch[i], ch[i], k=3),
-                Conv(ch[i], ch[i], k=3)
-            )
-            self.reg_convs.append(reg_conv)
-            self.reg_preds.append(nn.Conv2d(ch[i], 4 * self.reg_max, kernel_size=1))
-
-            # Classification branch
-            cls_conv = nn.Sequential(
-                Conv(ch[i], ch[i], k=3),
-                Conv(ch[i], ch[i], k=3)
-            )
-            self.cls_convs.append(cls_conv)
-            self.cls_preds.append(nn.Conv2d(ch[i], self.nc, kernel_size=1))
-
-        # Initialize biases
-        self.init_biases()
-
-        # Distribution Focal Loss (DFL)
+        c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))  # channels
+        self.cv2 = nn.ModuleList(
+            nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch
+        )
+        self.cv3 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch)
         self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
-        self.proj = nn.Parameter(torch.linspace(0, self.reg_max - 1, self.reg_max), requires_grad=False)
 
-    def init_biases(self):
-        """Initialize biases for classification conv layers."""
-        prior_prob = 0.01
-        bias_value = float(-np.log((1 - prior_prob) / prior_prob))
-        for conv in self.cls_preds:
-            nn.init.constant_(conv.bias, bias_value)
+    def inference(self, x):
+        # Inference path
+        shape = x[0].shape  # BCHW
+        x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
+        if self.dynamic or self.shape != shape:
+            self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5))
+            self.shape = shape
+
+        if self.export and self.format in ("saved_model", "pb", "tflite", "edgetpu", "tfjs"):  # avoid TF FlexSplitV ops
+            box = x_cat[:, : self.reg_max * 4]
+            cls = x_cat[:, self.reg_max * 4 :]
+        else:
+            box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
+
+        if self.export and self.format in ("tflite", "edgetpu"):
+            # Precompute normalization factor to increase numerical stability
+            # See https://github.com/ultralytics/ultralytics/issues/7371
+            grid_h = shape[2]
+            grid_w = shape[3]
+            grid_size = torch.tensor([grid_w, grid_h, grid_w, grid_h], device=box.device).reshape(1, 4, 1)
+            norm = self.strides / (self.stride[0] * grid_size)
+            dbox = self.decode_bboxes(self.dfl(box) * norm, self.anchors.unsqueeze(0) * norm[:, :2])
+        else:
+            dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
+
+        y = torch.cat((dbox, cls.sigmoid()), 1)
+        return y if self.export else (y, x)
+
+    def forward_feat(self, x, cv2, cv3):
+        y = []
+        for i in range(self.nl):
+            y.append(torch.cat((cv2[i](x[i]), cv3[i](x[i])), 1))
+        return y
 
     def forward(self, x):
-        """Forward pass of the Detect module."""
-        cls_outputs = []
-        reg_outputs = []
-        for i in range(self.nl):
-            xi = x[i]
-
-            # Regression branch
-            reg_feat = self.reg_convs[i](xi)
-            reg_output = self.reg_preds[i](reg_feat)
-            reg_outputs.append(reg_output)
-
-            # Classification branch
-            cls_feat = self.cls_convs[i](xi)
-            cls_output = self.cls_preds[i](cls_feat)
-            cls_outputs.append(cls_output)
-
+        """Concatenates and returns predicted bounding boxes and class probabilities."""
+        y = self.forward_feat(x, self.cv2, self.cv3)
+        
         if self.training:
-            # Return outputs as is during training
-            return [reg_outputs, cls_outputs]
-        else:
-            # Inference
-            return self.postprocess([reg_outputs, cls_outputs], self.max_det, self.nc)
+            return y
 
-    def postprocess(self, outputs, max_det=300, nc=80):
-        """
-        Post-processes YOLO model predictions.
+        return self.inference(y)
 
-        Args:
-            outputs (list): List containing regression and classification outputs.
-            max_det (int): Maximum detections per image.
-            nc (int): Number of classes.
+    def bias_init(self):
+        """Initialize Detect() biases, WARNING: requires stride availability."""
+        m = self  # self.model[-1]  # Detect() module
+        # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1
+        # ncf = math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # nominal class frequency
+        for a, b, s in zip(m.cv2, m.cv3, m.stride):  # from
+            a[-1].bias.data[:] = 1.0  # box
+            b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (.01 objects, 80 classes, 640 img)
 
-        Returns:
-            List[torch.Tensor]: List of processed predictions for each image in the batch.
-        """
-        reg_outputs, cls_outputs = outputs
-        device = cls_outputs[0].device
-        dtype = cls_outputs[0].dtype
-
-        # Build strides
-        self.build_strides(cls_outputs)
-
-        # Generate anchor points and strides
-        anchor_points, stride_tensor = make_anchors(
-            cls_outputs, self.stride.to(device), 0.5, device=device
-        )  # anchor_points: [num_anchors_total, 2], stride_tensor: [num_anchors_total, 1]
-
-        # Prepare lists to collect predictions
-        batch_size = cls_outputs[0].shape[0]
-        cls_scores_list = []
-        bbox_preds_list = []
-        for cls_output, reg_output in zip(cls_outputs, reg_outputs):
-            # Apply sigmoid to classification outputs
-            cls_output = cls_output.sigmoid()
-
-            # Reshape classification outputs
-            cls_scores = cls_output.permute(0, 2, 3, 1).reshape(batch_size, -1, nc)
-
-            # Reshape regression outputs
-            reg_output = reg_output.permute(0, 2, 3, 1)
-            reg_output = reg_output.reshape(batch_size, -1, 4, self.reg_max)
-            reg_output = self.dfl(reg_output)
-            reg_output = reg_output @ self.proj.type_as(reg_output).unsqueeze(0).unsqueeze(0)
-            reg_output = reg_output.squeeze(-1)
-
-            # Decode bbox predictions
-            bbox_preds = dist2bbox(reg_output, anchor_points)
-
-            cls_scores_list.append(cls_scores)
-            bbox_preds_list.append(bbox_preds)
-
-        # Concatenate predictions from all levels
-        cls_scores = torch.cat(cls_scores_list, dim=1)  # [batch_size, num_anchors_total, num_classes]
-        bbox_preds = torch.cat(bbox_preds_list, dim=1)  # [batch_size, num_anchors_total, 4]
-
-        # Multiply bbox_preds by stride_tensor to get the final bbox coordinates
-        bbox_preds *= stride_tensor
-
-        # Perform non-maximum suppression (NMS)
-        results = []
-        for i in range(batch_size):
-            boxes = bbox_preds[i]
-            scores = cls_scores[i]
-            # Get class scores and labels
-            max_scores, labels = scores.max(dim=1)
-            # Apply score threshold
-            mask = max_scores > 0.01  # You can adjust the threshold
-            boxes = boxes[mask]
-            scores = max_scores[mask]
-            labels = labels[mask]
-
-            if boxes.numel() == 0:
-                results.append(torch.zeros((0, 6), device=device))
-                continue
-
-            # Concatenate boxes, scores, and labels
-            detections = torch.cat([boxes, scores.unsqueeze(1), labels.float().unsqueeze(1)], dim=1)
-
-            # Apply NMS
-            keep = torchvision.ops.nms(detections[:, :4], detections[:, 4], iou_threshold=0.6)
-            detections = detections[keep]
-
-            # Limit to max_det
-            detections = detections[:max_det]
-
-            results.append(detections)
-
-        return results
-
-    def fuseforward(self, x):
-        """For compatibility with fused models."""
-        return self.forward(x)
-  
-
-
+    def decode_bboxes(self, bboxes, anchors):
+        """Decode bounding boxes."""
+        if self.export:
+            return dist2bbox(bboxes, anchors, xywh=False, dim=1)
+        return dist2bbox(bboxes, anchors, xywh=True, dim=1)
 
 
 class Segment(Detect):
@@ -597,19 +495,19 @@ class RTDETRDecoder(nn.Module):
             xavier_uniform_(layer[0].weight)
 
 class v10Detect(Detect):
+
     max_det = 300
 
     def __init__(self, nc=80, ch=()):
         super().__init__(nc, ch)
         c3 = max(ch[0], min(self.nc, 100))  # channels
-
-        # Define cv2 and cv3 layers
-        self.cv2 = nn.ModuleList(nn.Sequential(Conv(x, x, 3, g=x), Conv(x, c3, 1)) for x in ch)
-        self.cv3 = nn.ModuleList(nn.Sequential(Conv(c3, c3, 3, g=c3), Conv(c3, c3, 1), nn.Conv2d(c3, self.nc, 1)) for _ in ch)
+        self.cv3 = nn.ModuleList(nn.Sequential(nn.Sequential(Conv(x, x, 3, g=x), Conv(x, c3, 1)), \
+                                               nn.Sequential(Conv(c3, c3, 3, g=c3), Conv(c3, c3, 1)), \
+                                                nn.Conv2d(c3, self.nc, 1)) for i, x in enumerate(ch))
 
         self.one2one_cv2 = copy.deepcopy(self.cv2)
         self.one2one_cv3 = copy.deepcopy(self.cv3)
-
+    
     def forward(self, x):
         one2one = self.forward_feat([xi.detach() for xi in x], self.one2one_cv2, self.one2one_cv3)
         if not self.export:
@@ -620,29 +518,18 @@ class v10Detect(Detect):
             if not self.export:
                 return {"one2many": one2many, "one2one": one2one}
             else:
-                assert self.max_det != -1
+                assert(self.max_det != -1)
                 boxes, scores, labels = ops.v10postprocess(one2one.permute(0, 2, 1), self.max_det, self.nc)
                 return torch.cat([boxes, scores.unsqueeze(-1), labels.unsqueeze(-1).to(boxes.dtype)], dim=-1)
         else:
             return {"one2many": one2many, "one2one": one2one}
 
-    def forward_feat(self, x, cv2, cv3):
-        """Forward pass for feature extraction."""
-        for i in range(len(cv2)):
-            x[i] = cv2[i](x[i])
-            x[i] = cv3[i](x[i])
-        return x
-
-    def inference(self, x):
-        """Inference method to process the outputs."""
-        # Implement the inference logic here
-        # This should include decoding the outputs and applying any necessary post-processing
-        return x
-
     def bias_init(self):
         super().bias_init()
         """Initialize Detect() biases, WARNING: requires stride availability."""
         m = self  # self.model[-1]  # Detect() module
+        # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1
+        # ncf = math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # nominal class frequency
         for a, b, s in zip(m.one2one_cv2, m.one2one_cv3, m.stride):  # from
             a[-1].bias.data[:] = 1.0  # box
             b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (.01 objects, 80 classes, 640 img)
