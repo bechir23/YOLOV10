@@ -229,10 +229,14 @@ class v8DetectionLoss:
         target_scores_sum = max(target_scores.sum(), 1)
 
         # Cls loss
-        target_labels_onehot = torch.zeros_like(target_labels, dtype=torch.float32)
-        target_labels_onehot = target_labels_onehot.scatter_(2, target_labels.unsqueeze(-1), 1)
-       
-        loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels_onehot) / target_scores_sum  # VFL way
+       # One-hot encoding for class labels
+        target_labels = target_labels.unsqueeze(-1).expand(-1, -1, self.nc)  # Expand to shape [batch_size, anchors, num_classes]
+        one_hot = torch.zeros(target_labels.size(), device=self.device)
+        one_hot.scatter_(-1, target_labels, 1)  # Create one-hot encoding for each class
+
+# Cls loss: Pass the one-hot encoded labels to the varifocal loss
+        loss[1] = self.varifocal_loss(pred_scores, target_scores, one_hot) / target_scores_sum  # Use one_hot for class labels
+
        # loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
 
         # Bbox loss
