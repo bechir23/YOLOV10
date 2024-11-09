@@ -143,7 +143,6 @@ class KeypointLoss(nn.Module):
         e = d / ((2 * self.sigmas).pow(2) * (area + 1e-9) * 2)  # from cocoeval
         return (kpt_loss_factor.view(-1, 1) * ((1 - torch.exp(-e)) * kpt_mask)).mean()
 
-
 class v8DetectionLoss:
     """Criterion class for computing training losses."""
 
@@ -160,13 +159,17 @@ class v8DetectionLoss:
         self.no = m.no
         self.reg_max = m.reg_max
         self.device = device
+        g = h['fl_gamma']  # focal loss gamma
+        if g > 0:
+            self.bce = FocalLoss(self.bce, g)
 
         self.use_dfl = m.reg_max > 1
-        self.varifocal_loss=VarifocalLoss() #inserted focal loss
 
         self.assigner = TaskAlignedAssigner(topk=tal_topk, num_classes=self.nc, alpha=0.5, beta=6.0)
         self.bbox_loss = BboxLoss(m.reg_max - 1, use_dfl=self.use_dfl).to(device)
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
+
+        self.varifocal_loss = VarifocalLoss()
 
     def preprocess(self, targets, batch_size, scale_tensor):
         """Preprocesses the target counts and matches with the input batch size to output a tensor."""
@@ -190,12 +193,10 @@ class v8DetectionLoss:
         if self.use_dfl:
             b, a, c = pred_dist.shape  # batch, anchors, channels
             pred_dist = pred_dist.view(b, a, 4, c // 4).softmax(3).matmul(self.proj.type(pred_dist.dtype))
-            # pred_dist = pred_dist.view(b, a, c // 4, 4).transpose(2,3).softmax(3).matmul(self.proj.type(pred_dist.dtype))
-            # pred_dist = (pred_dist.view(b, a, c // 4, 4).softmax(2) * self.proj.type(pred_dist.dtype).view(1, 1, -1, 1)).sum(2)
         return dist2bbox(pred_dist, anchor_points, xywh=False)
 
     def __call__(self, preds, batch):
-        """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
+        """Calculate the sum of the loss for box, cls, and dfl multiplied by batch size."""
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
         feats = preds[1] if isinstance(preds, tuple) else preds
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
@@ -230,9 +231,11 @@ class v8DetectionLoss:
 
         target_scores_sum = max(target_scores.sum(), 1)
 
+        # Ensure dimensions match
+        target_scores = target_scores.view(pred_scores.shape)
+
         # Cls loss
-        loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
-       # loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL
 
         # Bbox loss
         if fg_mask.sum():
