@@ -18,33 +18,6 @@ from ultralytics.utils import ops
 __all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder"
 
 
-class DecoupledHead(nn.Module):
-    def __init__(self, ch=256, nc=80, width=1.0, anchors=()):
-        super().__init__()
-        self.nc = nc  # number of classes
-        self.nl = len(anchors)  # number of detection layers
-        self.na = len(anchors[0]) // 2  # number of anchors
-        self.merge = Conv(ch, 256 * width, 1, 1)
-        self.cls_convs1 = Conv(256 * width, 256 * width, 3, 1, 1)
-        self.cls_convs2 = Conv(256 * width, 256 * width, 3, 1, 1)
-        self.reg_convs1 = Conv(256 * width, 256 * width, 3, 1, 1)
-        self.reg_convs2 = Conv(256 * width, 256 * width, 3, 1, 1)
-        self.cls_preds = nn.Conv2d(256 * width, self.nc * self.na, 1)
-        self.reg_preds = nn.Conv2d(256 * width, 4 * self.na, 1)
-        self.obj_preds = nn.Conv2d(256 * width, 1 * self.na, 1)
-
-    def forward(self, x):
-        x = self.merge(x)
-        x1 = self.cls_convs1(x)
-        x1 = self.cls_convs2(x1)
-        x1 = self.cls_preds(x1)
-        x2 = self.reg_convs1(x)
-        x2 = self.reg_convs2(x2)
-        x21 = self.reg_preds(x2)
-        x22 = self.obj_preds(x2)
-        out = torch.cat([x21, x22, x1], 1)
-        return out
-
 class Detect(nn.Module):
     """YOLOv8 Detect head for detection models."""
 
@@ -55,6 +28,7 @@ class Detect(nn.Module):
     strides = torch.empty(0)  # init
 
     def __init__(self, nc=80, ch=()):
+        """Initializes the YOLOv8 detection layer with specified number of classes and channels."""
         super().__init__()
         self.nc = nc  # number of classes
         self.nl = len(ch)  # number of detection layers
@@ -62,60 +36,38 @@ class Detect(nn.Module):
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.stride = torch.zeros(self.nl)  # strides computed during build
         c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))  # channels
-
         self.cv2 = nn.ModuleList(
             nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch
         )
-        self.cv3 = nn.ModuleList(
-            nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch
-        )
+        self.cv3 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch)
         self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
 
-    def separate_predictions(self, x):
-        """Separate bounding box and class predictions."""
-        # Concatenate predictions from all detection layers
+    def inference(self, x):
+        # Inference path
         shape = x[0].shape  # BCHW
         x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
-        box_preds, class_preds = x_cat.split((self.reg_max * 4, self.nc), 1)
-        return box_preds, class_preds
+        if self.dynamic or self.shape != shape:
+            self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5))
+            self.shape = shape
 
-    def decode_bboxes(self, bboxes, anchors):
-        """Decode bounding boxes."""
-        if self.export:
-            return dist2bbox(bboxes, anchors, xywh=False, dim=1)
-        return dist2bbox(bboxes, anchors, xywh=True, dim=1)
+        if self.export and self.format in ("saved_model", "pb", "tflite", "edgetpu", "tfjs"):  # avoid TF FlexSplitV ops
+            box = x_cat[:, : self.reg_max * 4]
+            cls = x_cat[:, self.reg_max * 4 :]
+        else:
+            box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
 
-    def process_bboxes(self, box_preds, shape):
-        """Process and decode bounding boxes."""
         if self.export and self.format in ("tflite", "edgetpu"):
+            # Precompute normalization factor to increase numerical stability
+            # See https://github.com/ultralytics/ultralytics/issues/7371
             grid_h = shape[2]
             grid_w = shape[3]
-            grid_size = torch.tensor([grid_w, grid_h, grid_w, grid_h], device=box_preds.device).reshape(1, 4, 1)
+            grid_size = torch.tensor([grid_w, grid_h, grid_w, grid_h], device=box.device).reshape(1, 4, 1)
             norm = self.strides / (self.stride[0] * grid_size)
-            dbox = self.decode_bboxes(self.dfl(box_preds) * norm, self.anchors.unsqueeze(0) * norm[:, :2])
+            dbox = self.decode_bboxes(self.dfl(box) * norm, self.anchors.unsqueeze(0) * norm[:, :2])
         else:
-            dbox = self.decode_bboxes(self.dfl(box_preds), self.anchors.unsqueeze(0)) * self.strides
-        return dbox
+            dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
 
-    def process_classes(self, class_preds):
-        """Process class predictions (sigmoid to get probabilities)."""
-        return class_preds.sigmoid()
-
-    def inference(self, x):
-        """Perform inference with decoupled steps."""
-        # Step 1: Separate box and class predictions
-        box_preds, class_preds = self.separate_predictions(x)
-
-        # Step 2: Decode bounding boxes
-        shape = x[0].shape  # BCHW
-        dbox = self.process_bboxes(box_preds, shape)
-
-        # Step 3: Process class predictions
-        cls = self.process_classes(class_preds)
-
-        # Step 4: Concatenate results (bounding boxes and class probabilities)
-        y = torch.cat((dbox, cls), 1)
-
+        y = torch.cat((dbox, cls.sigmoid()), 1)
         return y if self.export else (y, x)
 
     def forward_feat(self, x, cv2, cv3):
@@ -136,10 +88,17 @@ class Detect(nn.Module):
     def bias_init(self):
         """Initialize Detect() biases, WARNING: requires stride availability."""
         m = self  # self.model[-1]  # Detect() module
+        # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1
+        # ncf = math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # nominal class frequency
         for a, b, s in zip(m.cv2, m.cv3, m.stride):  # from
             a[-1].bias.data[:] = 1.0  # box
             b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (.01 objects, 80 classes, 640 img)
 
+    def decode_bboxes(self, bboxes, anchors):
+        """Decode bounding boxes."""
+        if self.export:
+            return dist2bbox(bboxes, anchors, xywh=False, dim=1)
+        return dist2bbox(bboxes, anchors, xywh=True, dim=1)
 
 
 class Segment(Detect):
