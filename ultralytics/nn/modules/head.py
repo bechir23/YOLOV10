@@ -16,8 +16,6 @@ import copy
 from ultralytics.utils import ops
 
 __all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder"
-
-
 class Detect(nn.Module):
     """YOLO Detect head for detection models with decoupled head implementation."""
 
@@ -80,9 +78,11 @@ class Detect(nn.Module):
         self.proj = nn.Parameter(torch.linspace(0, self.reg_max - 1, self.reg_max), requires_grad=False)
 
     def init_biases(self):
-        # Initialize biases for classification conv layers
+        """Initialize biases for classification conv layers."""
+        prior_prob = 0.01
+        bias_value = float(-np.log((1 - prior_prob) / prior_prob))
         for conv in self.cls_preds:
-            bias_init_with_prob(conv, prob=0.01)
+            nn.init.constant_(conv.bias, bias_value)
 
     def forward(self, x):
         """Forward pass of the Detect module."""
@@ -124,10 +124,13 @@ class Detect(nn.Module):
         device = cls_outputs[0].device
         dtype = cls_outputs[0].dtype
 
+        # Build strides
+        self.build_strides(cls_outputs)
+
         # Generate anchor points and strides
         anchor_points, stride_tensor = make_anchors(
             cls_outputs, self.stride.to(device), 0.5, device=device
-        )  # anchor_points: [num_anchors, 2], stride_tensor: [num_anchors, 1]
+        )  # anchor_points: [num_anchors_total, 2], stride_tensor: [num_anchors_total, 1]
 
         # Prepare lists to collect predictions
         batch_size = cls_outputs[0].shape[0]
@@ -144,7 +147,7 @@ class Detect(nn.Module):
             reg_output = reg_output.permute(0, 2, 3, 1)
             reg_output = reg_output.reshape(batch_size, -1, 4, self.reg_max)
             reg_output = self.dfl(reg_output)
-            reg_output = reg_output @ self.proj.type_as(reg_output)
+            reg_output = reg_output @ self.proj.type_as(reg_output).unsqueeze(0).unsqueeze(0)
             reg_output = reg_output.squeeze(-1)
 
             # Decode bbox predictions
@@ -194,8 +197,6 @@ class Detect(nn.Module):
     def fuseforward(self, x):
         """For compatibility with fused models."""
         return self.forward(x)
-
-    # Build strides method remains unchanged
   
 
 
