@@ -45,9 +45,8 @@ class DecoupledHead(nn.Module):
         out = torch.cat([x21, x22, x1], 1)
         return out
 
-
 class Detect(nn.Module):
-    """YOLOv8 Detect head for detection models with decoupled heads."""
+    """YOLOv8 Detect head for detection models."""
 
     dynamic = False  # force grid reconstruction
     export = False  # export mode
@@ -56,66 +55,79 @@ class Detect(nn.Module):
     strides = torch.empty(0)  # init
 
     def __init__(self, nc=80, ch=()):
-        """Initializes the YOLOv8 detection layer with specified number of classes and channels."""
         super().__init__()
         self.nc = nc  # number of classes
         self.nl = len(ch)  # number of detection layers
         self.reg_max = 16  # DFL channels (ch[0] // 16 to scale 4/8/12/16/20 for n/s/m/l/x)
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.stride = torch.zeros(self.nl)  # strides computed during build
-
-        # Define the heads for classification and bounding boxes (cv2 for box and cv3 for class)
         c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))  # channels
+
         self.cv2 = nn.ModuleList(
             nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch
         )
-        self.cv3 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch)
+        self.cv3 = nn.ModuleList(
+            nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch
+        )
         self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
 
-    def inference(self, x):
-        # Inference path
+    def separate_predictions(self, x):
+        """Separate bounding box and class predictions."""
+        # Concatenate predictions from all detection layers
         shape = x[0].shape  # BCHW
         x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
-        
-        # Dynamic anchors and strides handling
-        if self.dynamic or self.shape != shape:
-            self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5))
-            self.shape = shape
+        box_preds, class_preds = x_cat.split((self.reg_max * 4, self.nc), 1)
+        return box_preds, class_preds
 
-        # Split the predictions into box and class scores
-        if self.export and self.format in ("saved_model", "pb", "tflite", "edgetpu", "tfjs"):  # avoid TF FlexSplitV ops
-            box = x_cat[:, : self.reg_max * 4]
-            cls = x_cat[:, self.reg_max * 4 :]
-        else:
-            box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
+    def decode_bboxes(self, bboxes, anchors):
+        """Decode bounding boxes."""
+        if self.export:
+            return dist2bbox(bboxes, anchors, xywh=False, dim=1)
+        return dist2bbox(bboxes, anchors, xywh=True, dim=1)
 
-        # Apply normalization for export
+    def process_bboxes(self, box_preds, shape):
+        """Process and decode bounding boxes."""
         if self.export and self.format in ("tflite", "edgetpu"):
             grid_h = shape[2]
             grid_w = shape[3]
-            grid_size = torch.tensor([grid_w, grid_h, grid_w, grid_h], device=box.device).reshape(1, 4, 1)
+            grid_size = torch.tensor([grid_w, grid_h, grid_w, grid_h], device=box_preds.device).reshape(1, 4, 1)
             norm = self.strides / (self.stride[0] * grid_size)
-            dbox = self.decode_bboxes(self.dfl(box) * norm, self.anchors.unsqueeze(0) * norm[:, :2])
+            dbox = self.decode_bboxes(self.dfl(box_preds) * norm, self.anchors.unsqueeze(0) * norm[:, :2])
         else:
-            dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
+            dbox = self.decode_bboxes(self.dfl(box_preds), self.anchors.unsqueeze(0)) * self.strides
+        return dbox
 
-        # Concatenate decoded bounding boxes and classification probabilities
-        y = torch.cat((dbox, cls.sigmoid()), 1)
+    def process_classes(self, class_preds):
+        """Process class predictions (sigmoid to get probabilities)."""
+        return class_preds.sigmoid()
+
+    def inference(self, x):
+        """Perform inference with decoupled steps."""
+        # Step 1: Separate box and class predictions
+        box_preds, class_preds = self.separate_predictions(x)
+
+        # Step 2: Decode bounding boxes
+        shape = x[0].shape  # BCHW
+        dbox = self.process_bboxes(box_preds, shape)
+
+        # Step 3: Process class predictions
+        cls = self.process_classes(class_preds)
+
+        # Step 4: Concatenate results (bounding boxes and class probabilities)
+        y = torch.cat((dbox, cls), 1)
+
         return y if self.export else (y, x)
 
     def forward_feat(self, x, cv2, cv3):
         y = []
         for i in range(self.nl):
-            # Use decoupled heads for box and class predictions
-            box_feat = cv2[i](x[i])
-            cls_feat = cv3[i](x[i])
-            y.append(torch.cat((box_feat, cls_feat), 1))
+            y.append(torch.cat((cv2[i](x[i]), cv3[i](x[i])), 1))
         return y
 
     def forward(self, x):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
         y = self.forward_feat(x, self.cv2, self.cv3)
-
+        
         if self.training:
             return y
 
@@ -127,12 +139,6 @@ class Detect(nn.Module):
         for a, b, s in zip(m.cv2, m.cv3, m.stride):  # from
             a[-1].bias.data[:] = 1.0  # box
             b[-1].bias.data[: m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (.01 objects, 80 classes, 640 img)
-
-    def decode_bboxes(self, bboxes, anchors):
-        """Decode bounding boxes."""
-        if self.export:
-            return dist2bbox(bboxes, anchors, xywh=False, dim=1)
-        return dist2bbox(bboxes, anchors, xywh=True, dim=1)
 
 
 
