@@ -329,7 +329,48 @@ class SpatialAttention(nn.Module):
 
 
 class CBAM(nn.Module):
-    """Convolutional Block Attention Module."""
+    def __init__(self, in_channels):
+        """
+        Initializes the CrossChannelAttention module.
+
+        Args:
+            in_channels (int): Number of input channels.
+        """
+        super(CBAM, self).__init__()
+        self.in_channels = in_channels
+
+        # Global Average Pooling
+        self.global_avg_pool = nn.AdaptiveAvgPool2d(1)
+
+        # Fully connected layers for channel attention
+        self.fc1 = nn.Conv2d(in_channels, in_channels, kernel_size=1, bias=False)
+        self.relu = nn.ReLU(inplace=True)
+        self.fc2 = nn.Conv2d(in_channels, in_channels, kernel_size=1, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        """
+        Forward pass of the CrossChannelAttention module.
+
+        Args:
+            x (torch.Tensor): Input feature map of shape (batch_size, in_channels, height, width).
+
+        Returns:
+            torch.Tensor: Output feature map with cross-channel attention applied.
+        """
+        # Global Average Pooling
+        avg_out = self.global_avg_pool(x)
+
+        # Channel attention
+        attention = self.fc1(avg_out)
+        attention = self.relu(attention)
+        attention = self.fc2(attention)
+        attention = self.sigmoid(attention)
+
+        # Apply attention to the input feature map
+        out = x * attention
+        return out
+"""class CBAM(nn.Module):
 
     def __init__(self, channels: int, kernel_size=7):
         super().__init__()
@@ -337,12 +378,11 @@ class CBAM(nn.Module):
         self.spatial_attention = SpatialAttention(kernel_size)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through both attention mechanisms."""
       #  print('cbam input shape',x.shape)
         x = self.channel_attention(x)  # Apply channel attention
         x = self.spatial_attention(x)  # Apply spatial attention
     #    print('cbam output shape',x.shape)
-        return x
+        return x"""
 
 
 class ECAAttention(nn.Module):
