@@ -1086,8 +1086,44 @@ class SEBlock(nn.Module):
         y = self.sigmoid(y)
       #  print('shape y in seblock', (x*y.expand_as(x)).shape)
         return x * y.expand_as(x)
-
 class CoordAtt(nn.Module):
+    def __init__(self, in_channels, reduction=16):
+        super(CoordAtt, self).__init__()
+        self.in_channels = in_channels
+        reduced_channels = max(8, in_channels // reduction)
+
+        # Separate pooling along spatial dimensions
+        self.avg_pool_h = nn.AdaptiveAvgPool2d((None, 1))
+        self.avg_pool_w = nn.AdaptiveAvgPool2d((1, None))
+
+        # Shared MLP layers for both channel and spatial interactions
+        self.fc1 = nn.Conv2d(in_channels, reduced_channels, kernel_size=1, bias=False)
+        self.fc2_h = nn.Conv2d(reduced_channels, in_channels, kernel_size=1, bias=False)
+        self.fc2_w = nn.Conv2d(reduced_channels, in_channels, kernel_size=1, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        # Separate spatial pooling
+        h_out = self.avg_pool_h(x)
+        w_out = self.avg_pool_w(x).permute(0, 1, 3, 2)
+
+        # Channel and spatial transformations through shared MLP layers
+        h_out = self.fc1(h_out)
+        w_out = self.fc1(w_out)
+
+        # Re-projecting to original channel space
+        h_out = self.fc2_h(h_out)
+        w_out = self.fc2_w(w_out)
+
+        # Sigmoid activation for channel-wise attention
+        h_out = self.sigmoid(h_out)
+        w_out = self.sigmoid(w_out)
+
+        # Reorder and apply both channel-wise and spatial attention
+        w_out = w_out.permute(0, 1, 3, 2)
+        out = x * h_out * w_out
+        return out
+"""class CoordAtt(nn.Module):
     def __init__(self, in_channels, reduction=32):
         super(CoordAtt, self).__init__()
         mip = max(8, in_channels // reduction)
@@ -1147,7 +1183,7 @@ class CoordAtt(nn.Module):
         # Output
      #   out =  x * a_h * a_w +  x *az_h * az_w
         out =  x * az_h * az_w
-        return out
+        return out"""
  
 """class CoordAtt(nn.Module):
     def __init__(self, in_channels, reduction=32):
