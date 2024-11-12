@@ -1086,7 +1086,7 @@ class SEBlock(nn.Module):
         y = self.sigmoid(y)
       #  print('shape y in seblock', (x*y.expand_as(x)).shape)
         return x * y.expand_as(x)
-class CoordAtt(nn.Module):
+"""class CoordAtt(nn.Module):
     def __init__(self, in_channels, reduction=16):
         super(CoordAtt, self).__init__()
         self.in_channels = in_channels
@@ -1122,8 +1122,8 @@ class CoordAtt(nn.Module):
         # Reorder and apply both channel-wise and spatial attention
         w_out = w_out.permute(0, 1, 3, 2)
         out = x * h_out * w_out
-        return out
-"""class CoordAtt(nn.Module):
+        return out"""
+class CoordAtt(nn.Module):
     def __init__(self, in_channels, reduction=32):
         super(CoordAtt, self).__init__()
         mip = max(8, in_channels // reduction)
@@ -1183,7 +1183,7 @@ class CoordAtt(nn.Module):
         # Output
      #   out =  x * a_h * a_w +  x *az_h * az_w
         out =  x * az_h * az_w
-        return out"""
+        return out
  
 """class CoordAtt(nn.Module):
     def __init__(self, in_channels, reduction=32):
