@@ -22,6 +22,7 @@ __all__ = (
     "Concat",
     "RepConv",
     "ECAAttention",
+    "LCAN"
 )
 
 
@@ -328,7 +329,7 @@ class SpatialAttention(nn.Module):
         return x * self.act(y)  # Scale input by attention weights
 
 
-class CBAM(nn.Module):
+class LCAN(nn.Module):
     def __init__(self, in_channels):
         """
         Initializes the CrossChannelAttention module.
@@ -336,7 +337,7 @@ class CBAM(nn.Module):
         Args:
             in_channels (int): Number of input channels.
         """
-        super(CBAM, self).__init__()
+        super(LCAN, self).__init__()
         self.in_channels = in_channels
 
         # Global Average Pooling
