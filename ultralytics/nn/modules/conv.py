@@ -383,7 +383,7 @@ class CBAM(nn.Module):
         x = self.channel_attention(x)  # Apply channel attention
         x = self.spatial_attention(x)  # Apply spatial attention
     #    print('cbam output shape',x.shape)
-        return x"""
+        return x
 
 
 class ECAAttention(nn.Module):
