@@ -60,4 +60,4 @@ head:
 
 
   
-  - [[18, 21, 24], 1, v10Detect, [nc]] # Detect at different scales (P3, P4, P5)
+  - [[18, 22, 25], 1, v10Detect, [nc]] # Detect at different scales (P3, P4, P5)
