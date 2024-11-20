@@ -70,7 +70,9 @@ from .conv import (
     LightConv,
     RepConv,
     SpatialAttention,
-    ECAAttention
+    ECAAttention,
+    LCAN
+
 )
 from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment, WorldDetect, v10Detect
 from .transformer import (
@@ -155,5 +157,6 @@ __all__ = (
     "CoordAtt",
     "EMA",
     "ResNetBlock",
-    "DeformableAttention"
+    "DeformableAttention",
+    "LCAN"
 )
