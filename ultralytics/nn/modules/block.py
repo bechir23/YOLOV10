@@ -26,6 +26,7 @@ __all__ = (
     "BNContrastiveHead",
     "C3x",
     "C3k2",
+    "C3k",
     "C3TR",
     "C3Ghost",
     "GhostBottleneck",
@@ -266,6 +267,19 @@ class C3x(C3):
         super().__init__(c1, c2, n, shortcut, g, e)
         self.c_ = int(c2 * e)
         self.m = nn.Sequential(*(Bottleneck(self.c_, self.c_, shortcut, g, k=((1, 3), (3, 1)), e=1) for _ in range(n)))
+
+
+
+class C3k(C3):
+    """C3k is a CSP bottleneck module with customizable kernel sizes for feature extraction in neural networks."""
+
+    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5, k=3):
+        """Initializes the C3k module with specified channels, number of layers, and configurations."""
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        # self.m = nn.Sequential(*(RepBottleneck(c_, c_, shortcut, g, k=(k, k), e=1.0) for _ in range(n)))
+        self.m = nn.Sequential(*(Bottleneck(c_, c_, shortcut, g, k=(k, k), e=1.0) for _ in range(n)))
+
 
 
 class C3k2(C2f):
