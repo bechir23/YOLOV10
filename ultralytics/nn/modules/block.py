@@ -25,6 +25,7 @@ __all__ = (
     "ContrastiveHead",
     "BNContrastiveHead",
     "C3x",
+    "C3k2",
     "C3TR",
     "C3Ghost",
     "GhostBottleneck",
