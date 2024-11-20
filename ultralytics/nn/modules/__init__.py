@@ -119,7 +119,6 @@ __all__ = (
     "C2fAttn",
     "C3x",
     "C3TR",
-    "C3k2",
     "C3Ghost",
     "GhostBottleneck",
     "Bottleneck",
@@ -160,5 +159,6 @@ __all__ = (
     "EMA",
     "ResNetBlock",
     "DeformableAttention",
-    "LCAN"
+    "LCAN",
+    "C3k2",
 )
