@@ -899,7 +899,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             PSA,
             SCDown,
             C2fCIB,
-            DeformableAttention
+            DeformableAttention,
             
             
         }:
@@ -913,9 +913,13 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
           #      )  # num heads
 
             args = [c1, c2, *args[1:]]
-            if m in (BottleneckCSP, C1, C2, C2f, C2fAttn, C3, C3TR, C3Ghost, C3x, RepC3, C2fCIB):
+            if m in (BottleneckCSP, C1, C2, C2f, C2fAttn, C3, C3TR, C3Ghost, C3x, RepC3,  C3K2, C2fCIB):
                 args.insert(2, n)  # number of repeats
                 n = 1
+            if m is C3k2:  # for M/L/X sizes
+                legacy = False
+                if scale in "mlx":
+                    args[3] = True
         elif m is AIFI:
             args = [ch[f], *args]
         elif m in {HGStem, HGBlock}:
