@@ -904,18 +904,20 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             C3k2
             
             
+            
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
             args = [c1, c2, *args[1:]]
-            if m in (BottleneckCSP, C1, C2, C2f, C2fAttn, C3, C3TR, C3Ghost, C3x, RepC3,  C3k2, C2fCIB):
+            if m in (BottleneckCSP, C1, C2, C2f, C2fAttn, C3, C3TR, C3Ghost, C3x, RepC3, C2fCIB, C3k2):
                 args.insert(2, n)  # number of repeats
                 n = 1
             if m is C3k2:  # for M/L/X sizes
                 legacy = False
                 if scale in "mlx":
-                    args[3] = True
+                    args[3] = True    
+          
         elif m is AIFI:
             args = [ch[f], *args]
         elif m in {HGStem, HGBlock}:
@@ -946,7 +948,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1=ch[f]
             args=[c1]
         elif m is LCAN :
-            ch1=ch[f]
+            c1=ch[f]
             args=[c1]
         elif m is ECAAttention:
             c1, c2 = ch[f], args[0]
