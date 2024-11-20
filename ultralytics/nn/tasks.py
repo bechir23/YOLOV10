@@ -901,6 +901,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             SCDown,
             C2fCIB,
             DeformableAttention,
+            C3k2,
             
             
         }:
