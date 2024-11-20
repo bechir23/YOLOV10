@@ -54,7 +54,8 @@ from .block import (
     SEBlock,
     CoordAtt,
     EMA,
-    DeformableAttention
+    DeformableAttention,
+    C3k2
 )
 from .conv import (
     CBAM,
@@ -118,6 +119,7 @@ __all__ = (
     "C2fAttn",
     "C3x",
     "C3TR",
+    "C3k2",
     "C3Ghost",
     "GhostBottleneck",
     "Bottleneck",
