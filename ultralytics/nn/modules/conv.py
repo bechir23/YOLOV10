@@ -371,7 +371,7 @@ class LCAN(nn.Module):
         # Apply attention to the input feature map
         out = x * attention
         return out
-"""class CBAM(nn.Module):
+class CBAM(nn.Module):
 
     def __init__(self, channels: int, kernel_size=7):
         super().__init__()
