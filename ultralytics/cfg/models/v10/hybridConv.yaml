@@ -6,7 +6,7 @@
 nc: 80 # number of classes
 scales: # model compound scaling constants, i.e. 'model=yolov8n.yaml' will call yolov8.yaml with scale 'n'
   # [depth, width, max_channels]
-  s: [0.33, 0.35, 1024]         
+  s: [0.33, 0.25, 1024]         
                                                              
 # new mpodel to test with modified C2F FROM THE one that attended 0.784 and it has to adapt more different situations to adjust recall 
 backbone:
