@@ -384,14 +384,9 @@ class CBAM(nn.Module):
         x = self.spatial_attention(x)  # Apply spatial attention
     #    print('cbam output shape',x.shape)
         return x"""
-class LCAN(nn.Module):
+    
 
-    def __init__(self, channels: int, kernel_size=7):
-       
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-      
-        return  
+  
 
 class ECAAttention(nn.Module):
     """Constructs a ECA module.
