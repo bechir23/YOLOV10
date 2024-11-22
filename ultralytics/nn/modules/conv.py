@@ -329,7 +329,7 @@ class SpatialAttention(nn.Module):
         return x * self.act(y)  # Scale input by attention weights
 
 
-class LCAN(nn.Module):
+class CBAM(nn.Module):
     def __init__(self, in_channels):
         """
         Initializes the CrossChannelAttention module.
@@ -337,7 +337,7 @@ class LCAN(nn.Module):
         Args:
             in_channels (int): Number of input channels.
         """
-        super(LCAN, self).__init__()
+        super(CBAM, self).__init__()
         self.in_channels = in_channels
 
         # Global Average Pooling
@@ -371,7 +371,7 @@ class LCAN(nn.Module):
         # Apply attention to the input feature map
         out = x * attention
         return out
-class CBAM(nn.Module):
+class LCAN(nn.Module):
 
     def __init__(self, channels: int, kernel_size=7):
         super().__init__()
