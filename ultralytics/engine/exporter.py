@@ -652,76 +652,95 @@ class Exporter:
             f = f.with_suffix(".mlmodel")
             ct_model.save(str(f))
         return f, ct_model
-
     @try_export
     def export_engine(self, prefix=colorstr("TensorRT:")):
         """YOLOv8 TensorRT export https://developer.nvidia.com/tensorrt."""
-        assert self.im.device.type != "cpu", "export running on CPU but must be on GPU, i.e. use 'device=0'"
-        f_onnx, _ = self.export_onnx()  # run before TRT import https://github.com/ultralytics/ultralytics/issues/7016
-
+        assert self.im.device.type != "cpu", "Export must be run on GPU, i.e., use 'device=0'"
+        f_onnx, _ = self.export_onnx()  # Export to ONNX format
+    
         try:
-            import tensorrt as trt  # noqa
+            import tensorrt as trt  # Import TensorRT
         except ImportError:
             if LINUX:
-                check_requirements("nvidia-tensorrt", cmds="-U --index-url https://pypi.ngc.nvidia.com")
-            import tensorrt as trt  # noqa
-
-        check_version(trt.__version__, "7.0.0", hard=True)  # require tensorrt>=7.0.0
-
+                check_requirements("tensorrt>7.0.0,!=10.1.0")
+            import tensorrt as trt  # Try importing again after installation
+    
+        # Check TensorRT version
+        check_version(trt.__version__, ">=7.0.0", hard=True)
+        check_version(trt.__version__, "!=10.1.0", msg="TensorRT 10.1.0 is not supported")
+        is_trt10 = int(trt.__version__.split(".")[0]) >= 10  # Check if TensorRT version >= 10
+    
         self.args.simplify = True
-
+    
         LOGGER.info(f"\n{prefix} starting export with TensorRT {trt.__version__}...")
-        assert Path(f_onnx).exists(), f"failed to export ONNX file: {f_onnx}"
-        f = self.file.with_suffix(".engine")  # TensorRT engine file
+        assert Path(f_onnx).exists(), f"Failed to export ONNX file: {f_onnx}"
+        f = self.file.with_suffix(".engine")  # Output TensorRT engine file
         logger = trt.Logger(trt.Logger.INFO)
         if self.args.verbose:
             logger.min_severity = trt.Logger.Severity.VERBOSE
-
+    
         builder = trt.Builder(logger)
         config = builder.create_builder_config()
-        config.max_workspace_size = self.args.workspace * 1 << 30
-        # config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace << 30)  # fix TRT 8.4 deprecation notice
-
+        workspace = int(self.args.workspace * (1 << 30))  # Workspace size in bytes
+    
+        # Set workspace size based on TensorRT version
+        if is_trt10:
+            # For TensorRT 10 and above
+            config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace)
+        else:
+            # For TensorRT versions below 10
+            config.max_workspace_size = workspace
+    
         flag = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
         network = builder.create_network(flag)
         parser = trt.OnnxParser(network, logger)
         if not parser.parse_from_file(f_onnx):
-            raise RuntimeError(f"failed to load ONNX file: {f_onnx}")
-
+            raise RuntimeError(f"Failed to load ONNX file: {f_onnx}")
+    
         inputs = [network.get_input(i) for i in range(network.num_inputs)]
         outputs = [network.get_output(i) for i in range(network.num_outputs)]
         for inp in inputs:
             LOGGER.info(f'{prefix} input "{inp.name}" with shape{inp.shape} {inp.dtype}')
         for out in outputs:
             LOGGER.info(f'{prefix} output "{out.name}" with shape{out.shape} {out.dtype}')
-
+    
         if self.args.dynamic:
             shape = self.im.shape
             if shape[0] <= 1:
-                LOGGER.warning(f"{prefix} WARNING ⚠️ 'dynamic=True' model requires max batch size, i.e. 'batch=16'")
+                LOGGER.warning(f"{prefix} WARNING ⚠️ 'dynamic=True' model requires max batch size, e.g., 'batch=16'")
             profile = builder.create_optimization_profile()
             for inp in inputs:
-                profile.set_shape(inp.name, (1, *shape[1:]), (max(1, shape[0] // 2), *shape[1:]), shape)
+                profile.set_shape(inp.name, min=(1, *shape[1:]), opt=shape, max=shape)
             config.add_optimization_profile(profile)
-
-        LOGGER.info(
-            f"{prefix} building FP{16 if builder.platform_has_fast_fp16 and self.args.half else 32} engine as {f}"
-        )
-        if builder.platform_has_fast_fp16 and self.args.half:
+    
+        # Determine precision
+        fp16_mode = builder.platform_has_fast_fp16 and self.args.half
+        LOGGER.info(f"{prefix} building FP{16 if fp16_mode else 32} engine as {f}")
+        if fp16_mode:
             config.set_flag(trt.BuilderFlag.FP16)
-
+    
+        # Clean up CUDA memory
         del self.model
         torch.cuda.empty_cache()
-
-        # Write file
-        with builder.build_engine(network, config) as engine, open(f, "wb") as t:
-            # Metadata
-            meta = json.dumps(self.metadata)
-            t.write(len(meta).to_bytes(4, byteorder="little", signed=True))
-            t.write(meta.encode())
-            # Model
-            t.write(engine.serialize())
-
+    
+        # Build engine based on TensorRT version
+        if is_trt10:
+            # For TensorRT 10 and above
+            engine = builder.build_serialized_network(network, config)
+            if engine is None:
+                raise RuntimeError("Failed to build the TensorRT engine")
+            # Write engine to file
+            with open(f, "wb") as t:
+                t.write(engine)
+        else:
+            # For TensorRT versions below 10
+            engine = builder.build_engine(network, config)
+            if engine is None:
+                raise RuntimeError("Failed to build the TensorRT engine")
+            # Write engine to file
+            with open(f, "wb") as t:
+                t.write(engine.serialize())
+    
         return f, None
 
     @try_export
