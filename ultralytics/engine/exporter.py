@@ -775,8 +775,8 @@ class Exporter:
                 cache=str(self.file.with_suffix(".cache")),
             )
         for layer in network:
-            if (layer == inputs[0] or layer == outputs[0]) and  fp16_mode :
-                layer.precision = trt.float16
+            if (layer == inputs[0] or layer == outputs[0]) :
+                continue
                 
             # Apply quantization (e.g., FP16/INT8) to intermediate layers
             if int8_mode:
