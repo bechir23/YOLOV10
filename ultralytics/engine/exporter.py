@@ -78,11 +78,9 @@ from ultralytics.nn.tasks import DetectionModel, SegmentationModel, WorldModel
 from ultralytics.utils import (
     ARM64,
     DEFAULT_CFG,
- #   IS_JETSON,
     LINUX,
     LOGGER,
     MACOS,
-    PYTHON_VERSION,
     ROOT,
     WINDOWS,
     __version__,
