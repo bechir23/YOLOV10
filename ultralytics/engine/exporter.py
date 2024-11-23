@@ -664,7 +664,7 @@ class Exporter:
 
     @try_export
     def export_engine(self, dla=None, prefix=colorstr("TensorRT:")):
-     """YOLO TensorRT export https://developer.nvidia.com/tensorrt."""
+        """YOLO TensorRT export https://developer.nvidia.com/tensorrt."""
         assert self.im.device.type != "cpu", "Export must be run on GPU, i.e., use 'device=0'"
         f_onnx, _ = self.export_onnx()  # Export to ONNX format
     
