@@ -27,7 +27,7 @@ import yaml
 from tqdm import tqdm as tqdm_original
 
 from ultralytics import __version__
-
+#update for jetson 
 # PyTorch Multi-GPU DDP Constants
 RANK = int(os.getenv("RANK", -1))
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
