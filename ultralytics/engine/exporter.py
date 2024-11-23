@@ -1,60 +1,55 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 """
-Export a YOLO PyTorch model to other formats. TensorFlow exports authored by https://github.com/zldrobit.
+Export a YOLOv8 PyTorch model to other formats. TensorFlow exports authored by https://github.com/zldrobit
 
 Format                  | `format=argument`         | Model
 ---                     | ---                       | ---
-PyTorch                 | -                         | yolo11n.pt
-TorchScript             | `torchscript`             | yolo11n.torchscript
-ONNX                    | `onnx`                    | yolo11n.onnx
-OpenVINO                | `openvino`                | yolo11n_openvino_model/
-TensorRT                | `engine`                  | yolo11n.engine
-CoreML                  | `coreml`                  | yolo11n.mlpackage
-TensorFlow SavedModel   | `saved_model`             | yolo11n_saved_model/
-TensorFlow GraphDef     | `pb`                      | yolo11n.pb
-TensorFlow Lite         | `tflite`                  | yolo11n.tflite
-TensorFlow Edge TPU     | `edgetpu`                 | yolo11n_edgetpu.tflite
-TensorFlow.js           | `tfjs`                    | yolo11n_web_model/
-PaddlePaddle            | `paddle`                  | yolo11n_paddle_model/
-MNN                     | `mnn`                     | yolo11n.mnn
-NCNN                    | `ncnn`                    | yolo11n_ncnn_model/
-IMX                     | `imx`                     | yolo11n_imx_model/
+PyTorch                 | -                         | yolov8n.pt
+TorchScript             | `torchscript`             | yolov8n.torchscript
+ONNX                    | `onnx`                    | yolov8n.onnx
+OpenVINO                | `openvino`                | yolov8n_openvino_model/
+TensorRT                | `engine`                  | yolov8n.engine
+CoreML                  | `coreml`                  | yolov8n.mlpackage
+TensorFlow SavedModel   | `saved_model`             | yolov8n_saved_model/
+TensorFlow GraphDef     | `pb`                      | yolov8n.pb
+TensorFlow Lite         | `tflite`                  | yolov8n.tflite
+TensorFlow Edge TPU     | `edgetpu`                 | yolov8n_edgetpu.tflite
+TensorFlow.js           | `tfjs`                    | yolov8n_web_model/
+PaddlePaddle            | `paddle`                  | yolov8n_paddle_model/
+NCNN                    | `ncnn`                    | yolov8n_ncnn_model/
 
 Requirements:
     $ pip install "ultralytics[export]"
 
 Python:
     from ultralytics import YOLO
-    model = YOLO('yolo11n.pt')
+    model = YOLO('yolov8n.pt')
     results = model.export(format='onnx')
 
 CLI:
-    $ yolo mode=export model=yolo11n.pt format=onnx
+    $ yolo mode=export model=yolov8n.pt format=onnx
 
 Inference:
-    $ yolo predict model=yolo11n.pt                 # PyTorch
-                         yolo11n.torchscript        # TorchScript
-                         yolo11n.onnx               # ONNX Runtime or OpenCV DNN with dnn=True
-                         yolo11n_openvino_model     # OpenVINO
-                         yolo11n.engine             # TensorRT
-                         yolo11n.mlpackage          # CoreML (macOS-only)
-                         yolo11n_saved_model        # TensorFlow SavedModel
-                         yolo11n.pb                 # TensorFlow GraphDef
-                         yolo11n.tflite             # TensorFlow Lite
-                         yolo11n_edgetpu.tflite     # TensorFlow Edge TPU
-                         yolo11n_paddle_model       # PaddlePaddle
-                         yolo11n.mnn                # MNN
-                         yolo11n_ncnn_model         # NCNN
-                         yolo11n_imx_model          # IMX
+    $ yolo predict model=yolov8n.pt                 # PyTorch
+                         yolov8n.torchscript        # TorchScript
+                         yolov8n.onnx               # ONNX Runtime or OpenCV DNN with dnn=True
+                         yolov8n_openvino_model     # OpenVINO
+                         yolov8n.engine             # TensorRT
+                         yolov8n.mlpackage          # CoreML (macOS-only)
+                         yolov8n_saved_model        # TensorFlow SavedModel
+                         yolov8n.pb                 # TensorFlow GraphDef
+                         yolov8n.tflite             # TensorFlow Lite
+                         yolov8n_edgetpu.tflite     # TensorFlow Edge TPU
+                         yolov8n_paddle_model       # PaddlePaddle
+                         yolov8n_ncnn_model         # NCNN
 
 TensorFlow.js:
     $ cd .. && git clone https://github.com/zldrobit/tfjs-yolov5-example.git && cd tfjs-yolov5-example
     $ npm install
-    $ ln -s ../../yolo11n_web_model public/yolo11n_web_model
+    $ ln -s ../../yolov5/yolov8n_web_model public/yolov8n_web_model
     $ npm start
 """
 
-import gc
 import json
 import os
 import shutil
@@ -68,23 +63,18 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ultralytics.cfg import TASK2DATA, get_cfg
-from ultralytics.data import build_dataloader
+from ultralytics.cfg import get_cfg
 from ultralytics.data.dataset import YOLODataset
-from ultralytics.data.utils import check_cls_dataset, check_det_dataset
+from ultralytics.data.utils import check_det_dataset
 from ultralytics.nn.autobackend import check_class_names, default_class_names
-from ultralytics.nn.modules import C2f, Detect, RTDETRDecoder,v10Detect
+from ultralytics.nn.modules import C2f, Detect, RTDETRDecoder, v10Detect
 from ultralytics.nn.tasks import DetectionModel, SegmentationModel, WorldModel
-from ultralytics.utils.torch_utils import TORCH_1_13, get_latest_opset, select_device, smart_inference_mode
-
 from ultralytics.utils import (
     ARM64,
     DEFAULT_CFG,
-    IS_JETSON,
     LINUX,
     LOGGER,
     MACOS,
-    PYTHON_VERSION,
     ROOT,
     WINDOWS,
     __version__,
@@ -93,15 +83,17 @@ from ultralytics.utils import (
     get_default_args,
     yaml_save,
 )
-from ultralytics.utils.checks import check_imgsz, check_is_path_safe, check_requirements, check_version
-from ultralytics.utils.downloads import attempt_download_asset, get_github_assets, safe_download
+from ultralytics.utils.checks import PYTHON_VERSION, check_imgsz, check_is_path_safe, check_requirements, check_version
+from ultralytics.utils.downloads import attempt_download_asset, get_github_assets
 from ultralytics.utils.files import file_size, spaces_in_path
 from ultralytics.utils.ops import Profile
-from ultralytics.utils.torch_utils import TORCH_1_13, get_latest_opset, select_device
+from ultralytics.utils.torch_utils import TORCH_1_13, get_latest_opset, select_device, smart_inference_mode
 
 
 def export_formats():
-    """Ultralytics YOLO export formats."""
+    """YOLOv8 export formats."""
+    import pandas
+
     x = [
         ["PyTorch", "-", ".pt", True, True],
         ["TorchScript", "torchscript", ".torchscript", True, True],
@@ -115,11 +107,9 @@ def export_formats():
         ["TensorFlow Edge TPU", "edgetpu", "_edgetpu.tflite", True, False],
         ["TensorFlow.js", "tfjs", "_web_model", True, False],
         ["PaddlePaddle", "paddle", "_paddle_model", True, True],
-        ["MNN", "mnn", ".mnn", True, True],
         ["NCNN", "ncnn", "_ncnn_model", True, True],
-        ["IMX", "imx", "_imx_model", True, True],
     ]
-    return dict(zip(["Format", "Argument", "Suffix", "CPU", "GPU"], zip(*x)))
+    return pandas.DataFrame(x, columns=["Format", "Argument", "Suffix", "CPU", "GPU"])
 
 
 def gd_outputs(gd):
@@ -132,7 +122,7 @@ def gd_outputs(gd):
 
 
 def try_export(inner_func):
-    """YOLO export decorator, i.e. @try_export."""
+    """YOLOv8 export decorator, i..e @try_export."""
     inner_args = get_default_args(inner_func)
 
     def outer_func(*args, **kwargs):
@@ -144,11 +134,10 @@ def try_export(inner_func):
             LOGGER.info(f"{prefix} export success ✅ {dt.t:.1f}s, saved as '{f}' ({file_size(f):.1f} MB)")
             return f, model
         except Exception as e:
-            LOGGER.error(f"{prefix} export failure ❌ {dt.t:.1f}s: {e}")
+            LOGGER.info(f"{prefix} export failure ❌ {dt.t:.1f}s: {e}")
             raise e
 
     return outer_func
-
 
 
 class Exporter:
@@ -665,157 +654,76 @@ class Exporter:
         return f, ct_model
 
     @try_export
-    def export_engine(self, dla=None, prefix=colorstr("TensorRT:")):
-        """YOLO TensorRT export https://developer.nvidia.com/tensorrt."""
-        assert self.im.device.type != "cpu", "Export must be run on GPU, i.e., use 'device=0'"
-        f_onnx, _ = self.export_onnx()  # Export to ONNX format
-    
+    def export_engine(self, prefix=colorstr("TensorRT:")):
+        """YOLOv8 TensorRT export https://developer.nvidia.com/tensorrt."""
+        assert self.im.device.type != "cpu", "export running on CPU but must be on GPU, i.e. use 'device=0'"
+        f_onnx, _ = self.export_onnx()  # run before TRT import https://github.com/ultralytics/ultralytics/issues/7016
+
         try:
-            import tensorrt as trt
+            import tensorrt as trt  # noqa
         except ImportError:
             if LINUX:
-                check_requirements("tensorrt>7.0.0,!=10.1.0")
-            import tensorrt as trt
-    
-        check_version(trt.__version__, ">=7.0.0", hard=True)
-        check_version(trt.__version__, "!=10.1.0", msg="TensorRT 10.1.0 is not supported")
-    
-        # Setup and checks
+                check_requirements("nvidia-tensorrt", cmds="-U --index-url https://pypi.ngc.nvidia.com")
+            import tensorrt as trt  # noqa
+
+        check_version(trt.__version__, "7.0.0", hard=True)  # require tensorrt>=7.0.0
+
+        self.args.simplify = True
+
         LOGGER.info(f"\n{prefix} starting export with TensorRT {trt.__version__}...")
-        is_trt10 = int(trt.__version__.split(".")[0]) >= 10  # TensorRT version >= 10
-        assert Path(f_onnx).exists(), f"Failed to export ONNX file: {f_onnx}"
+        assert Path(f_onnx).exists(), f"failed to export ONNX file: {f_onnx}"
         f = self.file.with_suffix(".engine")  # TensorRT engine file
         logger = trt.Logger(trt.Logger.INFO)
         if self.args.verbose:
             logger.min_severity = trt.Logger.Severity.VERBOSE
-    
-        # Engine builder
+
         builder = trt.Builder(logger)
         config = builder.create_builder_config()
-        workspace = int(self.args.workspace * (1 << 30))  # Workspace size in bytes
-    
-        # Set workspace size based on TensorRT version
-        if is_trt10:
-            # For TensorRT 10 and above
-            config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace)
-        else:
-            # For TensorRT versions below 10
-            config.max_workspace_size = workspace
-    
+        config.max_workspace_size = self.args.workspace * 1 << 30
+        # config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace << 30)  # fix TRT 8.4 deprecation notice
+
         flag = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
         network = builder.create_network(flag)
-        half = builder.platform_has_fast_fp16 and self.args.half
-        int8 = builder.platform_has_fast_int8 and self.args.int8
-    
-        # Optionally switch to DLA if enabled
-        if dla is not None:
-            if not IS_JETSON:
-                raise ValueError("DLA is only available on NVIDIA Jetson devices")
-            LOGGER.info(f"{prefix} enabling DLA on core {dla}...")
-            if not self.args.half and not self.args.int8:
-                raise ValueError(
-                    "DLA requires 'half=True' (FP16) or 'int8=True' (INT8) to be enabled. "
-                    "Please enable one of them and try again."
-                )
-            config.default_device_type = trt.DeviceType.DLA
-            config.DLA_core = int(dla)
-            config.set_flag(trt.BuilderFlag.GPU_FALLBACK)
-    
-        # Read ONNX file
-        with open(f_onnx, 'rb') as model:
-            parser = trt.OnnxParser(network, logger)
-            if not parser.parse(model.read()):
-                error_msgs = ''
-                for idx in range(parser.num_errors):
-                    error_msgs += f"{parser.get_error(idx)}\n"
-                raise RuntimeError(f"Failed to parse ONNX file: {f_onnx}\n{error_msgs}")
-    
-        # Network inputs and outputs
+        parser = trt.OnnxParser(network, logger)
+        if not parser.parse_from_file(f_onnx):
+            raise RuntimeError(f"failed to load ONNX file: {f_onnx}")
+
         inputs = [network.get_input(i) for i in range(network.num_inputs)]
         outputs = [network.get_output(i) for i in range(network.num_outputs)]
         for inp in inputs:
             LOGGER.info(f'{prefix} input "{inp.name}" with shape{inp.shape} {inp.dtype}')
         for out in outputs:
             LOGGER.info(f'{prefix} output "{out.name}" with shape{out.shape} {out.dtype}')
-    
+
         if self.args.dynamic:
-            shape = self.im.shape  # Current image shape
+            shape = self.im.shape
             if shape[0] <= 1:
-                LOGGER.warning(f"{prefix} WARNING ⚠️ 'dynamic=True' model requires max batch size, e.g., 'batch=16'")
+                LOGGER.warning(f"{prefix} WARNING ⚠️ 'dynamic=True' model requires max batch size, i.e. 'batch=16'")
             profile = builder.create_optimization_profile()
-            min_shape = (1, *shape[1:])  # Minimum input shape
-            max_shape = (max(1, self.args.batch), *shape[1:])  # Maximum input shape
-            opt_shape = shape  # Optimal input shape
             for inp in inputs:
-                profile.set_shape(inp.name, min=min_shape, opt=opt_shape, max=max_shape)
+                profile.set_shape(inp.name, (1, *shape[1:]), (max(1, shape[0] // 2), *shape[1:]), shape)
             config.add_optimization_profile(profile)
-    
-        LOGGER.info(f"{prefix} building {'INT8' if int8 else 'FP' + ('16' if half else '32')} engine as {f}")
-        if int8:
-            config.set_flag(trt.BuilderFlag.INT8)
-            config.profiling_verbosity = trt.ProfilingVerbosity.DETAILED
-    
-            # Since we're not using calibration data, we create a calibrator that does nothing
-            class EntropyCalibrator(trt.IInt8Calibrator):
-                def get_algorithm(self):
-                    return trt.CalibrationAlgoType.ENTROPY_CALIBRATION_2
-    
-                def get_batch_size(self):
-                    return self.args.batch or 1
-    
-                def get_batch(self, names):
-                    # Return None since we're not providing calibration data
-                    return None
-    
-                def read_calibration_cache(self):
-                    # Use existing calibration cache if available
-                    cache_file = str(self.file.with_suffix(".cache"))
-                    if os.path.exists(cache_file):
-                        with open(cache_file, "rb") as f:
-                            return f.read()
-                    return None
-    
-                def write_calibration_cache(self, cache):
-                    cache_file = str(self.file.with_suffix(".cache"))
-                    with open(cache_file, "wb") as f:
-                        f.write(cache)
-    
-            config.int8_calibrator = EntropyCalibrator()
-    
-        elif half:
+
+        LOGGER.info(
+            f"{prefix} building FP{16 if builder.platform_has_fast_fp16 and self.args.half else 32} engine as {f}"
+        )
+        if builder.platform_has_fast_fp16 and self.args.half:
             config.set_flag(trt.BuilderFlag.FP16)
-    
-        # Free CUDA memory
+
         del self.model
-        gc.collect()
         torch.cuda.empty_cache()
-    
-        # Build the engine
-        if hasattr(builder, 'build_serialized_network'):
-            # For TensorRT 10 and above
-            serialized_engine = builder.build_serialized_network(network, config)
-            if serialized_engine is None:
-                raise RuntimeError("Failed to build the TensorRT engine")
-            engine_data = serialized_engine
-        else:
-            # For TensorRT versions below 10
-            engine = builder.build_engine(network, config)
-            if engine is None:
-                raise RuntimeError("Failed to build the TensorRT engine")
-            engine_data = engine.serialize()
-    
-        # Write the engine to file
-        with open(f, "wb") as t:
+
+        # Write file
+        with builder.build_engine(network, config) as engine, open(f, "wb") as t:
             # Metadata
             meta = json.dumps(self.metadata)
             t.write(len(meta).to_bytes(4, byteorder="little", signed=True))
             t.write(meta.encode())
             # Model
-            t.write(engine_data)
-    
+            t.write(engine.serialize())
+
         return f, None
 
- 
     @try_export
     def export_saved_model(self, prefix=colorstr("TensorFlow SavedModel:")):
         """YOLOv8 TensorFlow SavedModel export."""
