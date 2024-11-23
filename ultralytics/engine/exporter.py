@@ -663,7 +663,7 @@ class Exporter:
         return f, ct_model
 
     @try_export
-   def export_engine(self, dla=None, prefix=colorstr("TensorRT:")):
+    def export_engine(self, dla=None, prefix=colorstr("TensorRT:")):
     """YOLO TensorRT export https://developer.nvidia.com/tensorrt."""
     assert self.im.device.type != "cpu", "Export running on CPU but must be on GPU, i.e., use 'device=0'"
     f_onnx, _ = self.export_onnx()  # Run before TRT import
@@ -826,6 +826,7 @@ class Exporter:
         t.write(engine_data)
 
     return f, None
+ 
     @try_export
     def export_saved_model(self, prefix=colorstr("TensorFlow SavedModel:")):
         """YOLOv8 TensorFlow SavedModel export."""
