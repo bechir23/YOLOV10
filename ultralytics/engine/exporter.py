@@ -653,8 +653,8 @@ class Exporter:
             ct_model.save(str(f))
         return f, ct_model
     @try_export
-    def export_engine(self, prefix=colorstr("TensorRT:")):
-        """YOLOv8 TensorRT export https://developer.nvidia.com/tensorrt."""
+    def export_engine(self, dla=None, prefix=colorstr("TensorRT:")):
+        """YOLOv8 TensorRT export with INT8 support https://developer.nvidia.com/tensorrt."""
         assert self.im.device.type != "cpu", "Export must be run on GPU, i.e., use 'device=0'"
         f_onnx, _ = self.export_onnx()  # Export to ONNX format
     
@@ -663,14 +663,12 @@ class Exporter:
         except ImportError:
             if LINUX:
                 check_requirements("tensorrt>7.0.0,!=10.1.0")
-            import tensorrt as trt  # Try importing again after installation
+            import tensorrt as trt  # Retry import after installation
     
         # Check TensorRT version
         check_version(trt.__version__, ">=7.0.0", hard=True)
         check_version(trt.__version__, "!=10.1.0", msg="TensorRT 10.1.0 is not supported")
         is_trt10 = int(trt.__version__.split(".")[0]) >= 10  # Check if TensorRT version >= 10
-    
-        self.args.simplify = True
     
         LOGGER.info(f"\n{prefix} starting export with TensorRT {trt.__version__}...")
         assert Path(f_onnx).exists(), f"Failed to export ONNX file: {f_onnx}"
@@ -679,16 +677,13 @@ class Exporter:
         if self.args.verbose:
             logger.min_severity = trt.Logger.Severity.VERBOSE
     
+        # TensorRT Builder and Config
         builder = trt.Builder(logger)
         config = builder.create_builder_config()
         workspace = int(self.args.workspace * (1 << 30))  # Workspace size in bytes
-    
-        # Set workspace size based on TensorRT version
         if is_trt10:
-            # For TensorRT 10 and above
             config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace)
         else:
-            # For TensorRT versions below 10
             config.max_workspace_size = workspace
     
         flag = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
@@ -697,6 +692,7 @@ class Exporter:
         if not parser.parse_from_file(f_onnx):
             raise RuntimeError(f"Failed to load ONNX file: {f_onnx}")
     
+        # Network Inputs and Outputs
         inputs = [network.get_input(i) for i in range(network.num_inputs)]
         outputs = [network.get_output(i) for i in range(network.num_outputs)]
         for inp in inputs:
@@ -704,44 +700,83 @@ class Exporter:
         for out in outputs:
             LOGGER.info(f'{prefix} output "{out.name}" with shape{out.shape} {out.dtype}')
     
+        # Dynamic Shapes
         if self.args.dynamic:
             shape = self.im.shape
-            if shape[0] <= 1:
-                LOGGER.warning(f"{prefix} WARNING ⚠️ 'dynamic=True' model requires max batch size, e.g., 'batch=16'")
             profile = builder.create_optimization_profile()
             for inp in inputs:
                 profile.set_shape(inp.name, min=(1, *shape[1:]), opt=shape, max=shape)
             config.add_optimization_profile(profile)
     
-        # Determine precision
+        # Precision Modes (FP16/INT8)
         fp16_mode = builder.platform_has_fast_fp16 and self.args.half
-        LOGGER.info(f"{prefix} building FP{16 if fp16_mode else 32} engine as {f}")
+        int8_mode = builder.platform_has_fast_int8 and self.args.int8
         if fp16_mode:
+            LOGGER.info(f"{prefix} enabling FP16 mode")
             config.set_flag(trt.BuilderFlag.FP16)
+    
+        if int8_mode:
+            LOGGER.info(f"{prefix} enabling INT8 mode with calibration")
+    
+            class EngineCalibrator(trt.IInt8Calibrator):
+                def __init__(self, dataset, batch, cache=""):
+                    super().__init__()
+                    self.dataset = dataset
+                    self.data_iter = iter(dataset)
+                    self.algo = trt.CalibrationAlgoType.ENTROPY_CALIBRATION_2
+                    self.batch = batch
+                    self.cache = Path(cache)
+    
+                def get_algorithm(self):
+                    return self.algo
+    
+                def get_batch_size(self):
+                    return self.batch or 1
+    
+                def get_batch(self, names):
+                    try:
+                        im0s = next(self.data_iter)["img"] / 255.0
+                        im0s = im0s.to("cuda") if im0s.device.type == "cpu" else im0s
+                        return [int(im0s.data_ptr())]
+                    except StopIteration:
+                        return None
+    
+                def read_calibration_cache(self):
+                    if self.cache.exists() and self.cache.suffix == ".cache":
+                        return self.cache.read_bytes()
+    
+                def write_calibration_cache(self, cache):
+                    _ = self.cache.write_bytes(cache)
+    
+            # Set INT8 calibrator
+            config.set_flag(trt.BuilderFlag.INT8)
+            config.int8_calibrator = EngineCalibrator(
+                dataset=self.get_int8_calibration_dataloader(prefix),
+                batch=2 * self.args.batch,
+                cache=str(self.file.with_suffix(".cache")),
+            )
     
         # Clean up CUDA memory
         del self.model
         torch.cuda.empty_cache()
     
-        # Build engine based on TensorRT version
+        # Build Engine
+        LOGGER.info(f"{prefix} building {'INT8' if int8_mode else 'FP' + ('16' if fp16_mode else '32')} engine as {f}")
         if is_trt10:
-            # For TensorRT 10 and above
             engine = builder.build_serialized_network(network, config)
             if engine is None:
                 raise RuntimeError("Failed to build the TensorRT engine")
-            # Write engine to file
             with open(f, "wb") as t:
                 t.write(engine)
         else:
-            # For TensorRT versions below 10
             engine = builder.build_engine(network, config)
             if engine is None:
                 raise RuntimeError("Failed to build the TensorRT engine")
-            # Write engine to file
             with open(f, "wb") as t:
                 t.write(engine.serialize())
     
         return f, None
+    
 
     @try_export
     def export_saved_model(self, prefix=colorstr("TensorFlow SavedModel:")):
