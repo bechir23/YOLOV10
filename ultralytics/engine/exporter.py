@@ -774,17 +774,6 @@ class Exporter:
                 batch=2 * self.args.batch,
                 cache=str(self.file.with_suffix(".cache")),
             )
-        for layer in network:
-            if (layer == inputs[0] or layer == outputs[0]) :
-                continue
-                
-            # Apply quantization (e.g., FP16/INT8) to intermediate layers
-            if int8_mode:
-                layer.precision = trt.int8
-            elif fp16_mode:
-                layer.precision = trt.float16
-            else:
-                layer.precision = trt.float32
         
             # Clean up CUDA memory
         del self.model
