@@ -774,8 +774,19 @@ class Exporter:
                 batch=2 * self.args.batch,
                 cache=str(self.file.with_suffix(".cache")),
             )
-    
-        # Clean up CUDA memory
+        for layer in network:
+            if layer == inputs[0] or layer == outputs[0]:
+                # Skip quantization for input and output layers
+                continue
+            # Apply quantization (e.g., FP16/INT8) to intermediate layers
+            if int8_mode:
+                layer.precision = trt.int8
+            elif fp16_mode:
+                layer.precision = trt.float16
+            else:
+                layer.precision = trt.float32
+        
+            # Clean up CUDA memory
         del self.model
         torch.cuda.empty_cache()
     
