@@ -294,7 +294,10 @@ class Exporter:
             elif isinstance(m, C2f) and not is_tf_format:
                 # EdgeTPU does not support FlexSplitV while split provides cleaner ONNX graph
                 m.forward = m.forward_split
-            if isinstance(m, Detect): """and imx:
+            if isinstance(m, Detect): 
+                 if isinstance(m, v10Detect):
+                    m.max_det = self.args.max_det
+                """and imx:
                 from ultralytics.utils.tal import make_anchors
 
                 m.anchors, m.strides = (
@@ -303,8 +306,7 @@ class Exporter:
                         torch.cat([s / m.stride.unsqueeze(-1) for s in self.imgsz], dim=1), m.stride, 0.5
                     )
                 )"""
-                if isinstance(m, v10Detect):
-                    m.max_det = self.args.max_det
+               
 
         y = None
         for _ in range(2):
