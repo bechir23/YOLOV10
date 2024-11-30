@@ -980,7 +980,6 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         ch.append(c2)
     return nn.Sequential(*layers), sorted(save)
 
-
 def yaml_model_load(path):
     """Load a YOLOv8 model from a YAML file."""
     import re
