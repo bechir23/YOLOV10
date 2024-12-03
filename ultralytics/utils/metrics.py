@@ -283,6 +283,16 @@ def smooth_BCE(eps=0.1):
     """
     return 1.0 - 0.5 * eps, 0.5 * eps
 
+import numpy as np
+import torch
+import warnings
+import matplotlib.pyplot as plt
+
+# Assume the supporting functions are defined or imported:
+# - box_iou: Function that computes IoU between boxes
+# - batch_probiou: Function for oriented bounding boxes, if used
+# - plt_settings: Decorator for matplotlib settings
+# - TryExcept: Decorator for exception handling in plotting functions
 
 class ConfusionMatrix:
     """
@@ -290,107 +300,138 @@ class ConfusionMatrix:
 
     Attributes:
         task (str): The type of task, either 'detect' or 'classify'.
-        matrix (np.ndarray): The confusion matrix, with dimensions depending on the task.
+        matrix (np.ndarray): The confusion matrix.
         nc (int): The number of classes.
         conf (float): The confidence threshold for detections.
         iou_thres (float): The Intersection over Union threshold.
     """
 
     def __init__(self, nc, conf=0.25, iou_thres=0.45, task="detect"):
-        """Initialize attributes for the YOLO model."""
+        """Initialize the ConfusionMatrix attributes."""
         self.task = task
-        self.matrix = np.zeros((nc + 1, nc + 1)) if self.task == "detect" else np.zeros((nc, nc))
         self.nc = nc  # number of classes
-        self.conf = 0.25 if conf in (None, 0.001) else conf  # apply 0.25 if default val conf is passed
-        self.iou_thres = iou_thres
+        self.conf = 0.25 if conf in (None, 0.001) else conf  # default confidence threshold
+        self.iou_thres = iou_thres  # IoU threshold for matching
+        # Initialize confusion matrix with an extra row and column for background (if detection task)
+        self.matrix = np.zeros((nc + 1, nc + 1)) if self.task == "detect" else np.zeros((nc, nc))
 
     def process_cls_preds(self, preds, targets):
         """
         Update confusion matrix for classification task.
 
         Args:
-            preds (Array[N, min(nc,5)]): Predicted class labels.
-            targets (Array[N, 1]): Ground truth class labels.
+            preds (List[Tensor]): Predicted class labels.
+            targets (List[Tensor]): Ground truth class labels.
         """
-        preds, targets = torch.cat(preds)[:, 0], torch.cat(targets)
+        preds = torch.cat(preds)[:, 0]
+        targets = torch.cat(targets)
         for p, t in zip(preds.cpu().numpy(), targets.cpu().numpy()):
-            self.matrix[p][t] += 1
+            self.matrix[int(p)][int(t)] += 1
+            print(f"Updated matrix[{int(p)}][{int(t)}]: {self.matrix[int(p)][int(t)]}")
 
     def process_batch(self, detections, gt_bboxes, gt_cls):
         """
         Update confusion matrix for object detection task.
 
         Args:
-            detections (Array[N, 6] | Array[N, 7]): Detected bounding boxes and their associated information.
-                                      Each row should contain (x1, y1, x2, y2, conf, class)
-                                      or with an additional element `angle` when it's obb.
-            gt_bboxes (Array[M, 4]| Array[N, 5]): Ground truth bounding boxes with xyxy/xyxyr format.
-            gt_cls (Array[M]): The class labels.
+            detections (Tensor[N, 6 or 7]): Detections with (x1, y1, x2, y2, conf, class[, angle]).
+            gt_bboxes (Tensor[M, 4 or 5]): Ground truth bounding boxes.
+            gt_cls (Tensor[M]): Ground truth class labels.
         """
-        if gt_cls.shape[0] == 0:  # Check if labels is empty
+        if gt_cls.shape[0] == 0:
+            # No ground truth labels
             if detections is not None:
                 detections = detections[detections[:, 4] > self.conf]
                 detection_classes = detections[:, 5].int()
                 for dc in detection_classes:
-                    self.matrix[dc, self.nc] += 1  # false positives
-            return
-        if detections is None:
-            gt_classes = gt_cls.int()
-            for gc in gt_classes:
-                self.matrix[self.nc, gc] += 1  # background FN
+                    self.matrix[dc, self.nc] += 1  # False positive
+                    print(f"False Positive (no ground truth): Predicted class {dc}")
             return
 
+        if detections is None or detections.shape[0] == 0:
+            # No detections
+            gt_classes = gt_cls.int()
+            for gc in gt_classes:
+                self.matrix[self.nc, gc] += 1  # False negative
+                print(f"False Negative (no detections): Actual class {gc}")
+            return
+
+        # Filter detections by confidence threshold
         detections = detections[detections[:, 4] > self.conf]
+        if detections.shape[0] == 0:
+            gt_classes = gt_cls.int()
+            for gc in gt_classes:
+                self.matrix[self.nc, gc] += 1  # False negative
+                print(f"False Negative (all detections below confidence threshold): Actual class {gc}")
+            return
+
         gt_classes = gt_cls.int()
         detection_classes = detections[:, 5].int()
-        is_obb = detections.shape[1] == 7 and gt_bboxes.shape[1] == 5  # with additional `angle` dimension
+        is_obb = detections.shape[1] == 7 and gt_bboxes.shape[1] == 5  # Oriented bounding boxes
+        # Compute IoU between detections and ground truths
         iou = (
             batch_probiou(gt_bboxes, torch.cat([detections[:, :4], detections[:, -1:]], dim=-1))
             if is_obb
             else box_iou(gt_bboxes, detections[:, :4])
         )
 
+        # Find matches over IoU threshold
         x = torch.where(iou > self.iou_thres)
         if x[0].shape[0]:
+            # Potential matches found
             matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()
-            if x[0].shape[0] > 1:
-                matches = matches[matches[:, 2].argsort()[::-1]]
-                matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-                matches = matches[matches[:, 2].argsort()[::-1]]
-                matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+            # Sort matches by IoU in descending order
+            matches = matches[matches[:, 2].argsort()[::-1]]
+            # Remove duplicate detections
+            _, idx = np.unique(matches[:, 1], return_index=True)
+            matches = matches[idx]
+            # Remove duplicate ground truths
+            _, idx = np.unique(matches[:, 0], return_index=True)
+            matches = matches[idx]
         else:
             matches = np.zeros((0, 3))
 
-        n = matches.shape[0] > 0
-        m0, m1, _ = matches.transpose().astype(int)
+        m0, m1, _ = matches.transpose().astype(int) if matches.size else (np.array([]), np.array([]), np.array([]))
+        # Update confusion matrix with matches
         for i, gc in enumerate(gt_classes):
-            j = m0 == i
-            if n and sum(j) == 1:
-                self.matrix[detection_classes[m1[j]], gc] += 1  # correct
+            if i in m0:
+                # Detection matched with ground truth
+                j = int(np.where(m0 == i)[0])
+                dc = detection_classes[m1[j]]
+                if dc == gc:
+                    self.matrix[gc, gc] += 1  # True Positive
+                    print(f"True Positive: Actual class {gc}, Predicted class {dc}")
+                else:
+                    self.matrix[dc, gc] += 1  # Misclassification
+                    self.matrix[self.nc, gc] += 1  # False Negative for actual class
+                    self.matrix[dc, self.nc] += 1  # False Positive for predicted class
+                    print(f"Misclassification: Actual class {gc}, Predicted class {dc}")
             else:
-                self.matrix[self.nc, gc] += 1  # true background
+                self.matrix[self.nc, gc] += 1  # False Negative
+                print(f"False Negative: Missed detection for actual class {gc}")
 
-        if n:
-            for i, dc in enumerate(detection_classes):
-                if not any(m1 == i):
-                    self.matrix[dc, self.nc] += 1  # predicted background
-
-    def matrix(self):
-        """Returns the confusion matrix."""
-        return self.matrix
+        # Check for detections that didn't match any ground truth
+        for i, dc in enumerate(detection_classes):
+            if i not in m1:
+                self.matrix[dc, self.nc] += 1  # False Positive
+                print(f"False Positive: Predicted class {dc}, no matching ground truth")
 
     def tp_fp(self):
-        """Returns true positives and false positives."""
-        tp = self.matrix.diagonal()  # true positives
-        fp = self.matrix.sum(1) - tp  # false positives
-        # fn = self.matrix.sum(0) - tp  # false negatives (missed detections)
-        return (tp[:-1], fp[:-1]) if self.task == "detect" else (tp, fp)  # remove background class if task=detect
+        """Returns true positives and false positives for each class."""
+        tp = np.diag(self.matrix)[:-1]  # Exclude background
+        fp = self.matrix.sum(1)[:-1] - tp
+        return tp, fp
 
-    @TryExcept("WARNING ⚠️ ConfusionMatrix plot failure")
-    @plt_settings()
+    def print(self):
+        """Print the confusion matrix to the console."""
+        print("Confusion Matrix:")
+        for i in range(self.nc + 1):
+            row = ' '.join(map(str, self.matrix[i]))
+            print(row)
+
     def plot(self, normalize=True, save_dir="", names=(), on_plot=None):
         """
-        Plot the confusion matrix using seaborn and save it to a file.
+        Plot the confusion matrix using seaborn.
 
         Args:
             normalize (bool): Whether to normalize the confusion matrix.
@@ -400,16 +441,20 @@ class ConfusionMatrix:
         """
         import seaborn as sn
 
-        array = self.matrix / ((self.matrix.sum(0).reshape(1, -1) + 1e-9) if normalize else 1)  # normalize columns
-        array[array < 0.005] = np.nan  # don't annotate (would appear as 0.00)
+        array = self.matrix.copy()
+        if normalize:
+            array = array / (array.sum(0).reshape(1, -1) + 1e-9)  # Normalize columns
 
-        fig, ax = plt.subplots(1, 1, figsize=(12, 9), tight_layout=True)
+        array[array < 0.005] = np.nan  # Don't annotate small values
+
+        fig, ax = plt.subplots(figsize=(12, 9), tight_layout=True)
         nc, nn = self.nc, len(names)  # number of classes, names
         sn.set(font_scale=1.0 if nc < 50 else 0.8)  # for label size
         labels = (0 < nn < 99) and (nn == nc)  # apply names to ticklabels
+
         ticklabels = (list(names) + ["background"]) if labels else "auto"
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")  # suppress empty matrix RuntimeWarning: All-NaN slice encountered
+            warnings.simplefilter("ignore")  # suppress empty matrix warnings
             sn.heatmap(
                 array,
                 ax=ax,
@@ -422,202 +467,219 @@ class ConfusionMatrix:
                 xticklabels=ticklabels,
                 yticklabels=ticklabels,
             ).set_facecolor((1, 1, 1))
-        title = "Confusion Matrix" + " Normalized" * normalize
+
+        title = "Confusion Matrix" + (" Normalized" if normalize else "")
         ax.set_xlabel("True")
         ax.set_ylabel("Predicted")
         ax.set_title(title)
-        plot_fname = Path(save_dir) / f'{title.lower().replace(" ", "_")}.png'
-        fig.savefig(plot_fname, dpi=250)
+        fig.savefig(f"{save_dir}/{title.replace(' ', '_').lower()}.png", dpi=250)
         plt.close(fig)
         if on_plot:
-            on_plot(plot_fname)
+            on_plot(f"{save_dir}/{title.replace(' ', '_').lower()}.png")
 
-    def print(self):
-        """Print the confusion matrix to the console."""
-        for i in range(self.nc + 1):
-            LOGGER.info(" ".join(map(str, self.matrix[i])))
+# Supporting functions
 
+def box_iou(box1, box2):
+    """
+    Compute the IoU between two sets of boxes.
+
+    Args:
+        box1 (Tensor[N, 4]): Ground truth boxes.
+        box2 (Tensor[M, 4]): Detection boxes.
+
+    Returns:
+        iou (Tensor[N, M]): IoU scores between boxes.
+    """
+    def box_area(box):
+        return (box[:, 2] - box[:, 0]) * (box[:, 3] - box[:, 1])
+
+    area1 = box_area(box1)
+    area2 = box_area(box2)
+
+    inter_x1 = torch.max(box1[:, None, 0], box2[:, 0])
+    inter_y1 = torch.max(box1[:, None, 1], box2[:, 1])
+    inter_x2 = torch.min(box1[:, None, 2], box2[:, 2])
+    inter_y2 = torch.min(box1[:, None, 3], box2[:, 3])
+
+    inter_w = (inter_x2 - inter_x1).clamp(min=0)
+    inter_h = (inter_y2 - inter_y1).clamp(min=0)
+    inter_area = inter_w * inter_h
+
+    union_area = area1[:, None] + area2 - inter_area
+    return inter_area / (union_area + 1e-16)
+
+def batch_probiou(gt_bboxes, detections):
+    """
+    Placeholder function for calculating IoU for oriented bounding boxes (if used).
+
+    Args:
+        gt_bboxes (Tensor): Ground truth bounding boxes with orientation.
+        detections (Tensor): Detection bounding boxes with orientation.
+
+    Returns:
+        iou (Tensor): IoU scores between boxes.
+    """
+    # Implement the actual oriented IoU calculation if needed
+    pass
+
+def plt_settings():
+    """
+    Decorator for setting matplotlib settings.
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            with plt.rc_context({'font.size': 12}):
+                return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+def TryExcept(msg=''):
+    """
+    Decorator for exception handling in plotting functions.
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                print(f"{msg}: {e}")
+        return wrapper
+    return decorator
 
 def smooth(y, f=0.05):
     """Box filter of fraction f."""
-    nf = round(len(y) * f * 2) // 2 + 1  # number of filter elements (must be odd)
+    nf = round(len(y) * f * 2) // 2 + 1  # number of filter elements
     p = np.ones(nf // 2)  # ones padding
-    yp = np.concatenate((p * y[0], y, p * y[-1]), 0)  # y padded
-    return np.convolve(yp, np.ones(nf) / nf, mode="valid")  # y-smoothed
-
+    yp = np.concatenate((p * y[0], y, p * y[-1]), 0)
+    return np.convolve(yp, np.ones(nf) / nf, mode='valid')
 
 @plt_settings()
-def plot_pr_curve(px, py, ap, save_dir=Path("pr_curve.png"), names=(), on_plot=None):
-    """Plots a precision-recall curve."""
-    fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
+def plot_pr_curve(px, py, ap, save_dir="pr_curve.png", names=(), on_plot=None):
+    """Plot the precision-recall curve."""
+    fig, ax = plt.subplots(figsize=(9, 6), tight_layout=True)
     py = np.stack(py, axis=1)
 
-    if 0 < len(names) < 21:  # display per-class legend if < 21 classes
+    if 0 < len(names) < 21:
         for i, y in enumerate(py.T):
-            ax.plot(px, y, linewidth=1, label=f"{names[i]} {ap[i, 0]:.3f}")  # plot(recall, precision)
+            ax.plot(px, y, linewidth=1, label=f"{names[i]} {ap[i]:.3f}")
     else:
-        ax.plot(px, py, linewidth=1, color="grey")  # plot(recall, precision)
+        ax.plot(px, py, linewidth=1, color='grey')
 
-    ax.plot(px, py.mean(1), linewidth=3, color="blue", label="all classes %.3f mAP@0.5" % ap[:, 0].mean())
-    ax.set_xlabel("Recall")
-    ax.set_ylabel("Precision")
+    ax.plot(px, py.mean(1), linewidth=3, color='blue', label=f'all classes {ap.mean():.3f} mAP@0.5')
+    ax.set_xlabel('Recall')
+    ax.set_ylabel('Precision')
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
-    ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
-    ax.set_title("Precision-Recall Curve")
+    ax.legend()
+    ax.set_title('Precision-Recall Curve')
     fig.savefig(save_dir, dpi=250)
     plt.close(fig)
     if on_plot:
         on_plot(save_dir)
 
-
 @plt_settings()
-def plot_mc_curve(px, py, save_dir=Path("mc_curve.png"), names=(), xlabel="Confidence", ylabel="Metric", on_plot=None):
-    """Plots a metric-confidence curve."""
-    fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
+def plot_mc_curve(px, py, save_dir="mc_curve.png", names=(), xlabel="Confidence", ylabel="Metric", on_plot=None):
+    """Plot the metric-confidence curve."""
+    fig, ax = plt.subplots(figsize=(9, 6), tight_layout=True)
 
-    if 0 < len(names) < 21:  # display per-class legend if < 21 classes
+    if 0 < len(names) < 21:
         for i, y in enumerate(py):
-            ax.plot(px, y, linewidth=1, label=f"{names[i]}")  # plot(confidence, metric)
+            ax.plot(px, y, linewidth=1, label=f"{names[i]}")
     else:
-        ax.plot(px, py.T, linewidth=1, color="grey")  # plot(confidence, metric)
+        ax.plot(px, py.T, linewidth=1, color='grey')
 
     y = smooth(py.mean(0), 0.05)
-    ax.plot(px, y, linewidth=3, color="blue", label=f"all classes {y.max():.2f} at {px[y.argmax()]:.3f}")
+    ax.plot(px, y, linewidth=3, color='blue', label=f'all classes {y.max():.2f} at {px[y.argmax()]:.3f}')
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
-    ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
-    ax.set_title(f"{ylabel}-Confidence Curve")
+    ax.legend()
+    ax.set_title(f'{ylabel}-Confidence Curve')
     fig.savefig(save_dir, dpi=250)
     plt.close(fig)
     if on_plot:
         on_plot(save_dir)
-
 
 def compute_ap(recall, precision):
     """
     Compute the average precision (AP) given the recall and precision curves.
 
     Args:
-        recall (list): The recall curve.
-        precision (list): The precision curve.
+        recall (np.ndarray): The recall curve.
+        precision (np.ndarray): The precision curve.
 
     Returns:
-        (float): Average precision.
-        (np.ndarray): Precision envelope curve.
-        (np.ndarray): Modified recall curve with sentinel values added at the beginning and end.
+        ap (float): Average precision.
+        mpre (np.ndarray): Precision envelope.
+        mrec (np.ndarray): Modified recall curve.
     """
+    mrec = np.concatenate(([0.], recall, [1.]))
+    mpre = np.concatenate(([1.], precision, [0.]))
 
-    # Append sentinel values to beginning and end
-    mrec = np.concatenate(([0.0], recall, [1.0]))
-    mpre = np.concatenate(([1.0], precision, [0.0]))
-
-    # Compute the precision envelope
     mpre = np.flip(np.maximum.accumulate(np.flip(mpre)))
 
-    # Integrate area under curve
-    method = "interp"  # methods: 'continuous', 'interp'
-    if method == "interp":
-        x = np.linspace(0, 1, 101)  # 101-point interp (COCO)
-        ap = np.trapz(np.interp(x, mrec, mpre), x)  # integrate
-    else:  # 'continuous'
-        i = np.where(mrec[1:] != mrec[:-1])[0]  # points where x-axis (recall) changes
-        ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])  # area under curve
+    method = 'interp'  # or 'continuous'
+    if method == 'interp':
+        x = np.linspace(0, 1, 101)
+        ap = np.trapz(np.interp(x, mrec, mpre), x)
+    else:
+        i = np.where(mrec[1:] != mrec[:-1])[0]
+        ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
 
     return ap, mpre, mrec
 
-
-def ap_per_class(
-    tp, conf, pred_cls, target_cls, plot=False, on_plot=None, save_dir=Path(), names=(), eps=1e-16, prefix=""
-):
+def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='', names=(), on_plot=None, eps=1e-16):
     """
-    Computes the average precision per class for object detection evaluation.
+    Compute the average precision (AP) per class.
 
     Args:
-        tp (np.ndarray): Binary array indicating whether the detection is correct (True) or not (False).
-        conf (np.ndarray): Array of confidence scores of the detections.
-        pred_cls (np.ndarray): Array of predicted classes of the detections.
-        target_cls (np.ndarray): Array of true classes of the detections.
-        plot (bool, optional): Whether to plot PR curves or not. Defaults to False.
-        on_plot (func, optional): A callback to pass plots path and data when they are rendered. Defaults to None.
-        save_dir (Path, optional): Directory to save the PR curves. Defaults to an empty path.
-        names (tuple, optional): Tuple of class names to plot PR curves. Defaults to an empty tuple.
-        eps (float, optional): A small value to avoid division by zero. Defaults to 1e-16.
-        prefix (str, optional): A prefix string for saving the plot files. Defaults to an empty string.
+        tp (np.ndarray): True positives.
+        conf (np.ndarray): Confidence scores.
+        pred_cls (np.ndarray): Predicted classes.
+        target_cls (np.ndarray): Ground truth classes.
+        plot (bool): Whether to plot the precision-recall curve.
+        save_dir (str): Directory to save plots.
+        names (tuple): Class names.
+        on_plot (function): Callback after plotting.
+        eps (float): Small value to avoid division by zero.
 
     Returns:
-        (tuple): A tuple of six arrays and one array of unique classes, where:
-            tp (np.ndarray): True positive counts at threshold given by max F1 metric for each class.Shape: (nc,).
-            fp (np.ndarray): False positive counts at threshold given by max F1 metric for each class. Shape: (nc,).
-            p (np.ndarray): Precision values at threshold given by max F1 metric for each class. Shape: (nc,).
-            r (np.ndarray): Recall values at threshold given by max F1 metric for each class. Shape: (nc,).
-            f1 (np.ndarray): F1-score values at threshold given by max F1 metric for each class. Shape: (nc,).
-            ap (np.ndarray): Average precision for each class at different IoU thresholds. Shape: (nc, 10).
-            unique_classes (np.ndarray): An array of unique classes that have data. Shape: (nc,).
-            p_curve (np.ndarray): Precision curves for each class. Shape: (nc, 1000).
-            r_curve (np.ndarray): Recall curves for each class. Shape: (nc, 1000).
-            f1_curve (np.ndarray): F1-score curves for each class. Shape: (nc, 1000).
-            x (np.ndarray): X-axis values for the curves. Shape: (1000,).
-            prec_values: Precision values at mAP@0.5 for each class. Shape: (nc, 1000).
+        ap (np.ndarray): Average precision per class.
     """
-
-    # Sort by objectness
+    # Sort by confidence
     i = np.argsort(-conf)
     tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
 
     # Find unique classes
-    unique_classes, nt = np.unique(target_cls, return_counts=True)
-    nc = unique_classes.shape[0]  # number of classes, number of detections
+    unique_classes = np.unique(target_cls)
+    nc = unique_classes.shape[0]  # Number of classes
 
-    # Create Precision-Recall curve and compute AP for each class
-    x, prec_values = np.linspace(0, 1, 1000), []
-
-    # Average precision, precision and recall curves
-    ap, p_curve, r_curve = np.zeros((nc, tp.shape[1])), np.zeros((nc, 1000)), np.zeros((nc, 1000))
+    # Initialize variables
+    ap = np.zeros(nc)
+    p, r = [np.zeros(nc) for _ in range(2)]
     for ci, c in enumerate(unique_classes):
         i = pred_cls == c
-        n_l = nt[ci]  # number of labels
-        n_p = i.sum()  # number of predictions
-        if n_p == 0 or n_l == 0:
+        n_gt = (target_cls == c).sum()  # Number of ground truth objects
+        n_p = i.sum()  # Number of predicted positives
+
+        if n_p == 0 or n_gt == 0:
             continue
 
-        # Accumulate FPs and TPs
-        fpc = (1 - tp[i]).cumsum(0)
-        tpc = tp[i].cumsum(0)
+        # Accumulate true positives and false positives
+        fpc = (1 - tp[i]).cumsum()
+        tpc = tp[i].cumsum()
 
-        # Recall
-        recall = tpc / (n_l + eps)  # recall curve
-        r_curve[ci] = np.interp(-x, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases
+        recall = tpc / (n_gt + eps)
+        precision = tpc / (tpc + fpc)
+        ap[ci], mpre, mrec = compute_ap(recall, precision)
 
-        # Precision
-        precision = tpc / (tpc + fpc)  # precision curve
-        p_curve[ci] = np.interp(-x, -conf[i], precision[:, 0], left=1)  # p at pr_score
+        # Optionally plot the precision-recall curve
+        if plot:
+            plot_pr_curve(mrec, mpre, ap, save_dir=f"{save_dir}/PR_curve_{names[c]}.png", names=[names[c]], on_plot=on_plot)
 
-        # AP from recall-precision curve
-        for j in range(tp.shape[1]):
-            ap[ci, j], mpre, mrec = compute_ap(recall[:, j], precision[:, j])
-            if plot and j == 0:
-                prec_values.append(np.interp(x, mrec, mpre))  # precision at mAP@0.5
+    return ap, unique_classes.astype('int32')
 
-    prec_values = np.array(prec_values)  # (nc, 1000)
-
-    # Compute F1 (harmonic mean of precision and recall)
-    f1_curve = 2 * p_curve * r_curve / (p_curve + r_curve + eps)
-    names = [v for k, v in names.items() if k in unique_classes]  # list: only classes that have data
-    names = dict(enumerate(names))  # to dict
-    if plot:
-        plot_pr_curve(x, prec_values, ap, save_dir / f"{prefix}PR_curve.png", names, on_plot=on_plot)
-        plot_mc_curve(x, f1_curve, save_dir / f"{prefix}F1_curve.png", names, ylabel="F1", on_plot=on_plot)
-        plot_mc_curve(x, p_curve, save_dir / f"{prefix}P_curve.png", names, ylabel="Precision", on_plot=on_plot)
-        plot_mc_curve(x, r_curve, save_dir / f"{prefix}R_curve.png", names, ylabel="Recall", on_plot=on_plot)
-
-    i = smooth(f1_curve.mean(0), 0.1).argmax()  # max F1 index
-    p, r, f1 = p_curve[:, i], r_curve[:, i], f1_curve[:, i]  # max-F1 precision, recall, F1 values
-    tp = (r * nt).round()  # true positives
-    fp = (tp / (p + eps) - tp).round()  # false positives
-    return tp, fp, p, r, f1, ap, unique_classes.astype(int), p_curve, r_curve, f1_curve, x, prec_values
 
 
 class Metric(SimpleClass):
