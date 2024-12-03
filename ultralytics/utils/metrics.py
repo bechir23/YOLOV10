@@ -554,24 +554,34 @@ def smooth(y, f=0.05):
     return np.convolve(yp, np.ones(nf) / nf, mode='valid')
 
 @plt_settings()
-def plot_pr_curve(px, py, ap, save_dir="pr_curve.png", names=(), on_plot=None):
-    """Plot the precision-recall curve."""
-    fig, ax = plt.subplots(figsize=(9, 6), tight_layout=True)
-    py = np.stack(py, axis=1)
+@plt_settings()
+def plot_pr_curve(px, py, ap, save_dir=Path("pr_curve.png"), names=(), on_plot=None):
+    """Plots a precision-recall curve."""
+    fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
+    
+    if not py:
+        print("No precision data available to plot.")
+        return
 
-    if 0 < len(names) < 21:
-        for i, y in enumerate(py.T):
-            ax.plot(px, y, linewidth=1, label=f"{names[i]} {ap[i]:.3f}")
+    # Adjust for single array in py
+    if isinstance(py, list) and len(py) == 1:
+        py = py[0][np.newaxis, :]  # Convert to 2D array
     else:
-        ax.plot(px, py, linewidth=1, color='grey')
-
-    ax.plot(px, py.mean(1), linewidth=3, color='blue', label=f'all classes {ap.mean():.3f} mAP@0.5')
-    ax.set_xlabel('Recall')
-    ax.set_ylabel('Precision')
+        py = np.stack(py, axis=1)
+    
+    if 0 < len(names) < 21:  # display per-class legend if < 21 classes
+        for i, y in enumerate(py):
+            ax.plot(px, y, linewidth=1, label=f"{names[i]} {ap[i]:.3f}")  # plot(recall, precision)
+    else:
+        ax.plot(px, py.T, linewidth=1, color="grey")  # plot(recall, precision)
+    
+    ax.plot(px, py.mean(0), linewidth=3, color="blue", label=f"all classes {ap.mean():.3f} mAP@0.5")
+    ax.set_xlabel("Recall")
+    ax.set_ylabel("Precision")
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.legend()
-    ax.set_title('Precision-Recall Curve')
+    ax.set_title("Precision-Recall Curve")
     fig.savefig(save_dir, dpi=250)
     plt.close(fig)
     if on_plot:
