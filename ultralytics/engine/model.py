@@ -213,7 +213,7 @@ class Model(nn.Module):
         self.model.args = {**DEFAULT_CFG_DICT, **self.overrides}  # combine default and model args (prefer model args)
         self.model.task = self.task
         self.model_name = cfg
-     def load(self, weights: str, task=None) -> None:
+    def load(self, weights: str, task=None) -> None:
         """
         Initializes a new model and infers the task type from the model head.
 
