@@ -23,7 +23,7 @@ class VarifocalLoss(nn.Module):
         super().__init__()
 
     @staticmethod
-    def forward(pred_score, gt_score, label, alpha=0.25, gamma=1.5):
+    def forward(pred_score, gt_score, label, alpha=0.75, gamma=2.0):
         """Computes varfocal loss."""
         weight = alpha * pred_score.sigmoid().pow(gamma) * (1 - label) + gt_score * label
         with torch.cuda.amp.autocast(enabled=False):
@@ -143,6 +143,7 @@ class KeypointLoss(nn.Module):
         e = d / ((2 * self.sigmas).pow(2) * (area + 1e-9) * 2)  # from cocoeval
         return (kpt_loss_factor.view(-1, 1) * ((1 - torch.exp(-e)) * kpt_mask)).mean()
 
+
 class v8DetectionLoss:
     """Criterion class for computing training losses."""
 
@@ -152,22 +153,16 @@ class v8DetectionLoss:
         h = model.args  # hyperparameters
 
         m = model.model[-1]  # Detect() module
-      #  class_weights_tensor = torch.tensor([7.6308e+00, 7.7943e+02, 6.2857e+00, 2.6281e+00, 9.0933e+02, 9.8841e+00,
-       #                              3.4100e+02, 5.4560e+03, 1.5369e+01, 5.6833e+01, 8.0353e+00, 6.4188e+01],
-        #                            device="cuda" if torch.cuda.is_available() else "cpu")
-
-# BCEWithLogitsLoss expects `pred_scores` to be raw logits, not probabilities
         self.bce = nn.BCEWithLogitsLoss(reduction="none")
         self.hyp = h
         self.stride = m.stride  # model strides
         self.nc = m.nc  # number of classes
         self.no = m.no
         self.reg_max = m.reg_max
-      #  self.focal_loss = FocalLoss() 
         self.device = device
 
         self.use_dfl = m.reg_max > 1
-  #      self.varifocal_loss=VarifocalLoss()
+
         self.assigner = TaskAlignedAssigner(topk=tal_topk, num_classes=self.nc, alpha=0.5, beta=6.0)
         self.bbox_loss = BboxLoss(m.reg_max - 1, use_dfl=self.use_dfl).to(device)
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
@@ -223,7 +218,7 @@ class v8DetectionLoss:
         # Pboxes
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
 
-        target_labels, target_bboxes, target_scores, fg_mask, _ = self.assigner(
+        _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             pred_scores.detach().sigmoid(),
             (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
             anchor_points * stride_tensor,
@@ -235,16 +230,8 @@ class v8DetectionLoss:
         target_scores_sum = max(target_scores.sum(), 1)
 
         # Cls loss
-       # One-hot encoding for class labels
-       # target_labels = target_labels.unsqueeze(-1).expand(-1, -1, self.nc)  # Expand to shape [batch_size, anchors, num_classes]
-       # one_hot = torch.zeros(target_labels.size(), device=self.device)
-      #  one_hot.scatter_(-1, target_labels, 1)  # Create one-hot encoding for each class
-
-# Cls loss: Pass the one-hot encoded labels to the varifocal loss
-    #    loss[1] = self.varifocal_loss(pred_scores, target_scores, one_hot) / target_scores_sum  # Use one_hot for class labels
-      #  loss[1] = self.focal_loss(pred_scores,one_hot)
+        # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
         loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
-
 
         # Bbox loss
         if fg_mask.sum():
