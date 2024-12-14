@@ -213,31 +213,7 @@ class Model(nn.Module):
         self.model.args = {**DEFAULT_CFG_DICT, **self.overrides}  # combine default and model args (prefer model args)
         self.model.task = self.task
         self.model_name = cfg
-    def load(self, weights: str, task=None) -> None:
-        """
-        Initializes a new model and infers the task type from the model head.
-
-        Args:
-            weights (str): model checkpoint to be loaded
-            task (str | None): model task
-        """
-        if weights.lower().startswith(("https://", "http://", "rtsp://", "rtmp://", "tcp://")):
-            weights = checks.check_file(weights)  # automatically download and return local filename
-        weights = checks.check_model_file_from_stem(weights)  # add suffix, i.e. yolov8n -> yolov8n.pt
-
-        if Path(weights).suffix == ".pt":
-            self.model, self.ckpt = attempt_load_one_weight(weights)
-            self.task = self.model.args["task"]
-            self.overrides = self.model.args = self._reset_ckpt_args(self.model.args)
-            self.ckpt_path = self.model.pt_path
-        else:
-            weights = checks.check_file(weights)  # runs in all cases, not redundant with above call
-            self.model, self.ckpt = weights, None
-            self.task = task or guess_model_task(weights)
-            self.ckpt_path = weights
-        self.overrides["model"] = weights
-        self.overrides["task"] = self.task
-        self.model_name = weights
+    
     def _load(self, weights: str, task=None) -> None:
         """
         Initializes a new model and infers the task type from the model head.
