@@ -443,6 +443,18 @@ class BaseTrainer:
                 self.scheduler.step()
             self.run_callbacks("on_fit_epoch_end")
             torch.cuda.empty_cache()  # clear GPU memory at end of epoch, may help reduce CUDA out of memory errors
+        if (self.args.val and (((epoch+1) % self.args.val_period == 0) or (self.epochs - epoch) <= 10)) \
+                or final_epoch or self.stopper.possible_stop or self.stop:
+                self.metrics, self.fitness = self.validate()
+            self.save_metrics(metrics={**self.label_loss_items(self.tloss), **self.metrics, **self.lr})
+            self.stop |= self.stopper(epoch + 1, self.fitness) or final_epoch
+            if self.args.time:
+                self.stop |= (time.time() - self.train_time_start) > (self.args.time * 3600)
+
+            # Save model
+            if self.args.save or final_epoch:
+                self.save_model()
+                self.run_callbacks("on_model_save")
 
             # Early Stopping
             if RANK != -1:  # if DDP training
