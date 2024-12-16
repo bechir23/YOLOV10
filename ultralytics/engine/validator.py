@@ -127,20 +127,22 @@ class BaseValidator:
             
 
             callbacks.add_integration_callbacks(self)
-        #    model = AutoBackend(
-         #       weights=model or self.args.model,
-          #      device=select_device(self.args.device, self.args.batch),
-           #     dnn=self.args.dnn,
-            #    data=self.args.data,
-             #   fp16=self.args.half,
-            #)
+            model = AutoBackend(
+                weights=model or self.args.model,
+                device=select_device(self.args.device, self.args.batch),
+                dnn=self.args.dnn,
+                data=self.args.data,
+               fp16=self.args.half,
+            )
             self.model = self.model.to(self.args.device)
 
             for param in self.model.parameters():
                   param.requires_grad = True
             self.device = self.args.device  # update device
-            self.args.half = model.fp16  # update half
+            #self.args.half = model.fp16  # update half
             stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
+            print(stride)
+            
             imgsz = check_imgsz(self.args.imgsz, stride=stride)
             if engine:
                 self.args.batch = model.batch_size
