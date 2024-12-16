@@ -120,7 +120,6 @@ class BaseValidator:
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
         else:
-           
             always_freeze_names = [".dfl"]  # always freeze these layers
             freeze_layer_names =  always_freeze_names
             for k, v in self.model.named_parameters():
