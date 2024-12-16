@@ -121,7 +121,7 @@ class BaseValidator:
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
         else:
-            self.loss = None
+            
 
 
             
@@ -137,7 +137,7 @@ class BaseValidator:
            # stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
             
             imgsz = check_imgsz(self.args.imgsz, stride='32')
-            
+            self.loss = torch.zeros(1, device=model.device)
             if str(self.args.data).split(".")[-1] in ("yaml", "yml"):
                 self.data = check_det_dataset(self.args.data)
             elif self.args.task == "classify":
