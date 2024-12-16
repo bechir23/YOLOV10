@@ -142,7 +142,7 @@ class BaseValidator:
             #self.args.half = model.fp16  # update half
            # stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
             
-            imgsz = check_imgsz(self.args.imgsz, stride=64)
+            imgsz = check_imgsz(self.args.imgsz, stride=None)
             
             if str(self.args.data).split(".")[-1] in ("yaml", "yml"):
                 self.data = check_det_dataset(self.args.data)
