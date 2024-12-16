@@ -86,6 +86,7 @@ class BaseValidator:
         self.training = True
         self.names = None
         self.seen = None
+        self.model= None
         self.stats = None
         self.confusion_matrix = None
         self.nc = None
@@ -116,7 +117,6 @@ class BaseValidator:
             # self.args.half = self.device.type != "cpu"  # force FP16 val during training
             model = trainer.ema.ema or trainer.model
             model = model.half() if self.args.half else model.float()
-            # self.model = model
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
         else:
@@ -126,14 +126,16 @@ class BaseValidator:
             
 
             callbacks.add_integration_callbacks(self)
-            model = AutoBackend(
-                weights=model or self.args.model,
-                device=select_device(self.args.device, self.args.batch),
-                dnn=self.args.dnn,
-                data=self.args.data,
-                fp16=self.args.half,
-            )
-            self.model= model
+        #    model = AutoBackend(
+         #       weights=model or self.args.model,
+          #      device=select_device(self.args.device, self.args.batch),
+           #     dnn=self.args.dnn,
+            #    data=self.args.data,
+             #   fp16=self.args.half,
+            #)
+            device=select_device(self.args.device, self.args.batch)
+            self.model = self.model.to(self.device)
+
             for param in self.model.parameters():
                   param.requires_grad = True
             self.device = self.model.device  # update device
