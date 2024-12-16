@@ -84,6 +84,7 @@ class BaseValidator:
         self.device = None
         self.batch_i = None
         self.training = True
+        self.loss = 0.0
         self.names = None
         self.seen = None
         self.stats = None
