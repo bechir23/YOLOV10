@@ -117,11 +117,11 @@ class BaseValidator:
             model = trainer.ema.ema or trainer.model
             model = model.half() if self.args.half else model.float()
             # self.model = model
-            self.loss = None
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
         else:
-            self.loss = torch.zeros(1, device=self.device)  # Initialize loss
+            self.loss = None
+
 
             
 
@@ -134,9 +134,9 @@ class BaseValidator:
                 fp16=self.args.half,
             )
             self.model= model
+            self.model= self.mdel.to(device)
             for param in self.model.parameters():
                   param.requires_grad = True
-            # self.model = model
             self.device = self.model.device  # update device
             self.args.half = model.fp16  # update half
             stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
@@ -191,6 +191,7 @@ class BaseValidator:
         
             # Loss and Backward Pass
             with dt[2]:
+              #  batch = self.preprocess_batch(batch)
                 self.loss, self.loss_items = self.model(batch)
         
                 # Accumulate loss
