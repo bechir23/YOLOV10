@@ -137,7 +137,7 @@ class BaseValidator:
            # stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
             
             imgsz = check_imgsz(self.args.imgsz, stride='32')
-            self.loss = torch.zeros(1, device=self.device)
+            self.loss = torch.zeros(6, device=self.device)
             if str(self.args.data).split(".")[-1] in ("yaml", "yml"):
                 self.data = check_det_dataset(self.args.data)
             elif self.args.task == "classify":
