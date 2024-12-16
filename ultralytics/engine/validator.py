@@ -133,8 +133,7 @@ class BaseValidator:
             #    data=self.args.data,
              #   fp16=self.args.half,
             #)
-            device=select_device(self.args.device, self.args.batch)
-            self.model = self.model.to(self.device)
+            self.model = self.model.to(self.args.device)
 
             for param in self.model.parameters():
                   param.requires_grad = True
