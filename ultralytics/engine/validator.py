@@ -196,8 +196,8 @@ class BaseValidator:
                 self.plot_predictions(batch, preds, batch_i)
 
             self.run_callbacks("on_val_batch_end")
-     #   stats = self.get_stats()
-      #  self.check_stats(stats)
+       # stats = self.get_stats()
+        #self.check_stats(stats)
         self.speed = dict(zip(self.speed.keys(), (x.t / len(self.dataloader.dataset) * 1e3 for x in dt)))
         self.finalize_metrics()
         if not (self.args.save_json and self.is_coco and len(self.jdict)):
