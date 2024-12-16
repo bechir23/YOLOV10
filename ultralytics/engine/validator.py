@@ -182,7 +182,6 @@ class BaseValidator:
                 batch = self.preprocess(batch)
         
             # Move batch to device
-            batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
         
             # Inference
             with dt[1]:
