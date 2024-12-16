@@ -120,15 +120,9 @@ class BaseValidator:
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
         else:
-            freeze_list = (
-            self.args.freeze
-            if isinstance(self.args.freeze, list)
-            else range(self.args.freeze)
-            if isinstance(self.args.freeze, int)
-            else []
-            )
+           
             always_freeze_names = [".dfl"]  # always freeze these layers
-            freeze_layer_names = [f"model.{x}." for x in freeze_list] + always_freeze_names
+            freeze_layer_names =  always_freeze_names
             for k, v in self.model.named_parameters():
                 # v.register_hook(lambda x: torch.nan_to_num(x))  # NaN to 0 (commented for erratic training results)
                 if any(x in k for x in freeze_layer_names):
