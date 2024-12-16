@@ -134,7 +134,7 @@ class BaseValidator:
                 fp16=self.args.half,
             )
             self.model= model
-            self.model= self.mdel.to(device)
+            self.model= self.model.to(device)
             for param in self.model.parameters():
                   param.requires_grad = True
             self.device = self.model.device  # update device
