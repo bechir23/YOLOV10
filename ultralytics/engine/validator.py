@@ -102,7 +102,8 @@ class BaseValidator:
         self.plots = {}
         self.callbacks = _callbacks or callbacks.get_default_callbacks()
 
-    @smart_inference_mode()
+   # @smart_inference_mode()
+    @torch.enable_grad()
     def __call__(self, trainer=None, model=None):
         """Supports validation of a pre-trained model if passed or a model being trained if trainer is passed (trainer
         gets priority).
@@ -193,6 +194,10 @@ class BaseValidator:
 
             # Loss
             with dt[2]:
+                loss, loss_items = self.model(batch)
+                self.loss += loss_items
+                loss.backward()
+
                 if self.training:
                     self.loss += model.loss(batch, preds)[1]
 
