@@ -109,6 +109,7 @@ class BaseValidator:
         """Supports validation of a pre-trained model if passed or a model being trained if trainer is passed (trainer
         gets priority).
         """
+        
         self.training = trainer is not None
         augment = self.args.augment and (not self.training)
         if self.training:
