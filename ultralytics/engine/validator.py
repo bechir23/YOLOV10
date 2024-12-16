@@ -117,7 +117,7 @@ class BaseValidator:
             self.data = trainer.data
             # self.args.half = self.device.type != "cpu"  # force FP16 val during training
             model = trainer.ema.ema or trainer.model
-            model = model.half() if self.args.half else model.float()
+     #       model = model.half() if self.args.half else model.float()
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
         else:
@@ -140,10 +140,9 @@ class BaseValidator:
                   param.requires_grad = True
             self.device = self.args.device  # update device
             #self.args.half = model.fp16  # update half
-            stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
-            print(stride)
+           # stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
             
-            imgsz = check_imgsz(self.args.imgsz, stride=stride)
+            imgsz = check_imgsz(self.args.imgsz, stride=64)
             if engine:
                 self.args.batch = model.batch_size
             elif not pt and not jit:
@@ -161,7 +160,7 @@ class BaseValidator:
                 self.args.workers = 0  # faster CPU val as time dominated by inference, not dataloading
             if not pt:
                 self.args.rect = False
-            self.stride = model.stride  # used in get_dataloader() for padding
+     #       self.stride = model.stride  # used in get_dataloader() for padding
             self.dataloader = self.dataloader or self.get_dataloader(self.data.get(self.args.split), self.args.batch)
 
             model.eval()
