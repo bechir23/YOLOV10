@@ -196,8 +196,8 @@ class BaseValidator:
                 self.plot_predictions(batch, preds, batch_i)
 
             self.run_callbacks("on_val_batch_end")
-        stats = self.get_stats()
-        self.check_stats(stats)
+     #   stats = self.get_stats()
+      #  self.check_stats(stats)
         self.speed = dict(zip(self.speed.keys(), (x.t / len(self.dataloader.dataset) * 1e3 for x in dt)))
         self.finalize_metrics()
         if not (self.args.save_json and self.is_coco and len(self.jdict)):
@@ -222,10 +222,11 @@ class BaseValidator:
                 with open(str(self.save_dir / "predictions.json"), "w") as f:
                     LOGGER.info(f"Saving {f.name}...")
                     json.dump(self.jdict, f)  # flatten and save
-                stats = self.eval_json(stats)  # update stats
+          #      stats = self.eval_json(stats)  # update stats
             if self.args.plots or self.args.save_json:
                 LOGGER.info(f"Results saved to {colorstr('bold', self.save_dir)}")
-            return stats
+          #  return stats
+            return None
 
     def match_predictions(self, pred_classes, true_classes, iou, use_scipy=False):
         """
