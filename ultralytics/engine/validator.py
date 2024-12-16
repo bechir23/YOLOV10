@@ -154,6 +154,7 @@ class BaseValidator:
             
            
      #       self.stride = model.stride  # used in get_dataloader() for padding
+            self.stride= 32
             self.dataloader = self.dataloader or self.get_dataloader(self.data.get(self.args.split), self.args.batch)
 
             model.eval()
