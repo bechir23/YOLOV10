@@ -84,7 +84,6 @@ class BaseValidator:
         self.device = None
         self.batch_i = None
         self.training = True
-        self.loss = 0.0
         self.names = None
         self.seen = None
         self.stats = None
@@ -122,19 +121,9 @@ class BaseValidator:
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
         else:
-            always_freeze_names = [".dfl"]  # always freeze these layers
-            freeze_layer_names =  always_freeze_names
-            for k, v in self.model.named_parameters():
-                # v.register_hook(lambda x: torch.nan_to_num(x))  # NaN to 0 (commented for erratic training results)
-                if any(x in k for x in freeze_layer_names):
-                    LOGGER.info(f"Freezing layer '{k}'")
-                    v.requires_grad = False
-                elif not v.requires_grad and v.dtype.is_floating_point:  # only floating point Tensor can require gradients
-                    LOGGER.info(
-                        f"WARNING ⚠️ setting 'requires_grad=True' for frozen layer '{k}'. "
-                        "See ultralytics.engine.trainer for customization of frozen layers."
-                    )
-                    v.requires_grad = True
+            self.loss = torch.zeros(1, device=self.device)  # Initialize loss
+
+            
 
             callbacks.add_integration_callbacks(self)
             model = AutoBackend(
@@ -144,6 +133,8 @@ class BaseValidator:
                 data=self.args.data,
                 fp16=self.args.half,
             )
+            for param in model.parameters():
+                  param.requires_grad = True
             # self.model = model
             self.device = model.device  # update device
             self.args.half = model.fp16  # update half
@@ -185,27 +176,35 @@ class BaseValidator:
         for batch_i, batch in enumerate(bar):
             self.run_callbacks("on_val_batch_start")
             self.batch_i = batch_i
+        
             # Preprocess
             with dt[0]:
                 batch = self.preprocess(batch)
-
+        
+            # Move batch to device
+            batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+        
             # Inference
             with dt[1]:
-                preds = model(batch["img"], augment=augment)
-
-            # Loss
+                preds = self.model(batch["img"], augment=augment)
+        
+            # Loss and Backward Pass
             with dt[2]:
-                loss, loss_items = self.model(batch)
+                # Compute loss
+                loss, loss_items = self.model.loss(batch, preds)
+        
+                # Accumulate loss
                 self.loss += loss_items
+        
+                # Backward pass
                 loss.backward()
-
-                if self.training:
-                    self.loss += model.loss(batch, preds)[1]
-
+        
             # Postprocess
             with dt[3]:
                 preds = self.postprocess(preds)
-
+        
+            # Update metrics
+         
             self.update_metrics(preds, batch)
             if self.args.plots and batch_i < 3:
                 self.plot_val_samples(batch, batch_i)
