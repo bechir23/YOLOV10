@@ -151,10 +151,8 @@ class BaseValidator:
             else:
                 raise FileNotFoundError(emojis(f"Dataset '{self.args.data}' for task={self.args.task} not found ❌"))
 
-            if self.device.type in ("cpu", "mps"):
-                self.args.workers = 0  # faster CPU val as time dominated by inference, not dataloading
-            if not pt:
-                self.args.rect = False
+            
+           
      #       self.stride = model.stride  # used in get_dataloader() for padding
             self.dataloader = self.dataloader or self.get_dataloader(self.data.get(self.args.split), self.args.batch)
 
