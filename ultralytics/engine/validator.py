@@ -138,7 +138,7 @@ class BaseValidator:
 
             for param in self.model.parameters():
                   param.requires_grad = True
-            self.device = self.model.device  # update device
+            self.device = self.args.device  # update device
             self.args.half = model.fp16  # update half
             stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
             imgsz = check_imgsz(self.args.imgsz, stride=stride)
