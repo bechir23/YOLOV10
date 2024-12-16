@@ -190,7 +190,7 @@ class BaseValidator:
         
             # Loss and Backward Pass
             with dt[2]:
-              #  batch = self.preprocess_batch(batch)
+                batch = self.preprocess_batch(batch)
                 self.loss, self.loss_items = self.model(batch)
         
                 # Accumulate loss
