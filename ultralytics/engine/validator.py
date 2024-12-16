@@ -176,31 +176,26 @@ class BaseValidator:
         for batch_i, batch in enumerate(bar):
             self.run_callbacks("on_val_batch_start")
             self.batch_i = batch_i
-        
             # Preprocess
             with dt[0]:
                 batch = self.preprocess(batch)
-        
-            # Move batch to device
-        
+
             # Inference
             with dt[1]:
-                preds = self.model(batch["img"], augment=augment)
-        
-            # Loss and Backward Pass
+                preds = model(batch["img"], augment=augment)
+
+            # Loss
             with dt[2]:
-                batch = self.preprocess_batch(batch)
-                self.loss, self.loss_items = self.model(batch)
-        
-                # Accumulate loss
-                self.loss += loss_items
-        
-                # Backward pass
+                loss, loss_items = self.model.loss(batch, preds)
+
+                self.loss += model.loss(batch, preds)[1]
                 loss.backward()
-        
+
             # Postprocess
             with dt[3]:
                 preds = self.postprocess(preds)
+
+       
         
             # Update metrics
          
