@@ -7,7 +7,7 @@ class YOLOv10DetectionValidator(DetectionValidator):
         super().__init__(*args, **kwargs)
         self.args.save_json |= self.is_coco
 
-    def postprocess(self, preds):
+  """  def postprocess(self, preds):
         if isinstance(preds, dict):
             preds = preds["one2one"]
 
@@ -21,4 +21,17 @@ class YOLOv10DetectionValidator(DetectionValidator):
             preds = preds.transpose(-1, -2)
             boxes, scores, labels = ops.v10postprocess(preds, self.args.max_det, self.nc)
             bboxes = ops.xywh2xyxy(boxes)
-            return torch.cat([bboxes, scores.unsqueeze(-1), labels.unsqueeze(-1)], dim=-1)
+            return torch.cat([bboxes, scores.unsqueeze(-1), labels.unsqueeze(-1)], dim=-1)"""
+    
+    
+    def postprocess(self, preds):
+            """Apply Non-maximum suppression to prediction outputs."""
+            return ops.non_max_suppression(
+                preds,
+                self.args.conf,
+                self.args.iou,
+                labels=self.lb,
+                multi_label=True,
+                agnostic=self.args.single_cls or self.args.agnostic_nms,
+                max_det=self.args.max_det,
+            )
