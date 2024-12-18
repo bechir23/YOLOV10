@@ -42,7 +42,8 @@ __all__ = (
     "CBLinear",
     "Silence",
     "ResNetBlock",
-    "DeformableAttention"
+    "DeformableAttention",
+    "C2PSA"
 )
 
 
@@ -86,6 +87,47 @@ class Proto(nn.Module):
     def forward(self, x):
         """Performs a forward pass through layers using an upsampled input image."""
         return self.cv3(self.cv2(self.upsample(self.cv1(x))))
+
+class C2PSA(nn.Module):
+    """
+    C2PSA module with attention mechanism for enhanced feature extraction and processing.
+
+    This module implements a convolutional block with attention mechanisms to enhance feature extraction and processing
+    capabilities. It includes a series of PSABlock modules for self-attention and feed-forward operations.
+
+    Attributes:
+        c (int): Number of hidden channels.
+        cv1 (Conv): 1x1 convolution layer to reduce the number of input channels to 2*c.
+        cv2 (Conv): 1x1 convolution layer to reduce the number of output channels to c.
+        m (nn.Sequential): Sequential container of PSABlock modules for attention and feed-forward operations.
+
+    Methods:
+        forward: Performs a forward pass through the C2PSA module, applying attention and feed-forward operations.
+
+    Notes:
+        This module essentially is the same as PSA module, but refactored to allow stacking more PSABlock modules.
+
+    Examples:
+        >>> c2psa = C2PSA(c1=256, c2=256, n=3, e=0.5)
+        >>> input_tensor = torch.randn(1, 256, 64, 64)
+        >>> output_tensor = c2psa(input_tensor)
+    """
+
+    def __init__(self, c1, c2, n=1, e=0.5):
+        """Initializes the C2PSA module with specified input/output channels, number of layers, and expansion ratio."""
+        super().__init__()
+        assert c1 == c2
+        self.c = int(c1 * e)
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
+        self.cv2 = Conv(2 * self.c, c1, 1)
+
+        self.m = nn.Sequential(*(PSABlock(self.c, attn_ratio=0.5, num_heads=self.c // 64) for _ in range(n)))
+
+    def forward(self, x):
+        """Processes the input tensor 'x' through a series of PSA blocks and returns the transformed tensor."""
+        a, b = self.cv1(x).split((self.c, self.c), dim=1)
+        b = self.m(b)
+        return self.cv2(torch.cat((a, b), 1))
 
 
 class HGStem(nn.Module):
