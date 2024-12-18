@@ -280,7 +280,6 @@ class BaseModel(nn.Module):
         """
         if not hasattr(self, "criterion"):
             self.criterion = self.init_criterion()
-        self.criterion = torch.nn.CrossEntropyLoss()
 
         preds = self.forward(batch["img"]) if preds is None else preds
         return self.criterion(preds, batch)
