@@ -55,7 +55,8 @@ from .block import (
     CoordAtt,
     EMA,
     DeformableAttention,
-    C3k2
+    C3k2,
+    C2PSA
 )
 from .conv import (
     CBAM,
@@ -161,4 +162,5 @@ __all__ = (
     "DeformableAttention",
     "LCAN",
     "C3k2",
+    "C2PSA",
 )
