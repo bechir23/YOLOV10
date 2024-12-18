@@ -62,7 +62,8 @@ from ultralytics.nn.modules import (
     CoordAtt,
     EMA,
     DeformableAttention,
-    LCAN
+    LCAN,
+    C2PSA,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -901,7 +902,8 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             SCDown,
             C2fCIB,
             DeformableAttention,
-            C3k2
+            C3k2,
+            C2PSA,
             
             
             
@@ -910,7 +912,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
             args = [c1, c2, *args[1:]]
-            if m in (BottleneckCSP, C1, C2, C2f, C2fAttn, C3, C3TR, C3Ghost, C3x, RepC3, C2fCIB, C3k2):
+            if m in (BottleneckCSP, C1, C2, C2f, C2fAttn, C3, C3TR, C3Ghost, C3x, RepC3, C2fCIB, C3k2,C2PSA):
                 args.insert(2, n)  # number of repeats
                 n = 1
             if m is C3k2:  # for M/L/X sizes
