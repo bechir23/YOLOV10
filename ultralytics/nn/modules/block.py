@@ -130,6 +130,43 @@ class C2PSA(nn.Module):
         return self.cv2(torch.cat((a, b), 1))
 
 
+class PSABlock(nn.Module):
+    """
+    PSABlock class implementing a Position-Sensitive Attention block for neural networks.
+
+    This class encapsulates the functionality for applying multi-head attention and feed-forward neural network layers
+    with optional shortcut connections.
+
+    Attributes:
+        attn (Attention): Multi-head attention module.
+        ffn (nn.Sequential): Feed-forward neural network module.
+        add (bool): Flag indicating whether to add shortcut connections.
+
+    Methods:
+        forward: Performs a forward pass through the PSABlock, applying attention and feed-forward layers.
+
+    Examples:
+        Create a PSABlock and perform a forward pass
+        >>> psablock = PSABlock(c=128, attn_ratio=0.5, num_heads=4, shortcut=True)
+        >>> input_tensor = torch.randn(1, 128, 32, 32)
+        >>> output_tensor = psablock(input_tensor)
+    """
+
+    def __init__(self, c, attn_ratio=0.5, num_heads=4, shortcut=True) -> None:
+        """Initializes the PSABlock with attention and feed-forward layers for enhanced feature extraction."""
+        super().__init__()
+
+        self.attn = Attention(c, attn_ratio=attn_ratio, num_heads=num_heads)
+        self.ffn = nn.Sequential(Conv(c, c * 2, 1), Conv(c * 2, c, 1, act=False))
+        self.add = shortcut
+
+    def forward(self, x):
+        """Executes a forward pass through PSABlock, applying attention and feed-forward layers to the input tensor."""
+        x = x + self.attn(x) if self.add else self.attn(x)
+        x = x + self.ffn(x) if self.add else self.ffn(x)
+        return x
+
+
 class HGStem(nn.Module):
     """
     StemBlock of PPHGNetV2 with 5 convolutions and one maxpool2d.
