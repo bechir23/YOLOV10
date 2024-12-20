@@ -34,7 +34,7 @@ backbone:
 head:
   # Applying SEBlock after C3Ghost for refining fine-grained features
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # Upsampling from P5 to P4
-  - [[-1, 9], 1, Concat, [1]] # Concatenate backbone P4 features
+  - [[-1, 8], 1, Concat, [1]] # Concatenate backbone P4 features
   - [-1, 1, C2f, [512]] # Applying SEBlock for fine-grained channel-wise recalibration at P4
   - [-1, 1, CoordAtt , [256]] # Applying SEBlock for fine-grained channel-wise recalibration at P3
 
